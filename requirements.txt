@@ -1,8 +1,0 @@
-py-cpuinfo
-colorama
-requests
-pyserial
-pypresence
-tronpy
-cryptography
-websocket-client
