@@ -123,7 +123,11 @@ class Settings:
 
 
 class Algorithms:
-
+    """
+    Class containing algorithms used by the miner
+    For more info about the implementation refer to the Duino whitepaper:
+    https://github.com/revoxhere/duino-coin/blob/gh-pages/assets/whitepaper.pdf
+    """
     def DUCOS1(last_h: str, exp_h: str, diff: int, eff: int):
         time_start = time()
         base_hash = sha512(last_h.encode('ascii'))
@@ -191,7 +195,64 @@ class Client:
                 sleep(15)
 
 
+class Donate:
+    def load(donation_level):
+        if donation_level > 0:
+            if os.name == 'nt':
+                if not Path(
+                        f"{Settings.DATA_DIR}/Donate.exe").is_file():
+                    url = ('https://server.duinocoin.com/'
+                           + 'donations/DonateExecutableWindows.exe')
+                    r = requests.get(url, timeout=10)
+                    with open(f"{Settings.DATA_DIR}/Donate.exe",
+                              'wb') as f:
+                        f.write(r.content)
+            elif os.name == "posix":
+                if osprocessor() == "aarch64":
+                    url = ('https://server.duinocoin.com/'
+                           + 'donations/DonateExecutableAARCH64')
+                elif osprocessor() == "armv7l":
+                    url = ('https://server.duinocoin.com/'
+                           + 'donations/DonateExecutableAARCH32')
+                else:
+                    url = ('https://server.duinocoin.com/'
+                           + 'donations/DonateExecutableLinux')
+                if not Path(
+                        f"{Settings.DATA_DIR}/Donate").is_file():
+                    r = requests.get(url, timeout=10)
+                    with open(f"{Settings.DATA_DIR}/Donate",
+                              "wb") as f:
+                        f.write(r.content)
 
+    def start(donation_level):
+        if os.name == 'nt':
+            cmd = (f'cd "{Settings.DATA_DIR}" & Donate.exe '
+                   + '-o stratum+tcp://xmg.minerclaim.net:3333 '
+                   + f'-u revox.donate -p x -s 4 -e {donation_level*10}')
+        elif os.name == 'posix':
+            cmd = (f'cd "{Settings.DATA_DIR}" && chmod +x Donate '
+                   + '&& nice -20 ./Donate -o '
+                   + 'stratum+tcp://xmg.minerclaim.net:3333 '
+                   + f'-u revox.donate -p x -s 4 -e {donation_level*10}')
+
+        if donation_level <= 0:
+            pretty_print(
+                Fore.YELLOW + get_string('free_network_warning').lstrip()
+                + get_string('donate_warning').replace("\n", "\n\t\t")
+                + Fore.GREEN + 'https://duinocoin.com/donate'
+                + Fore.YELLOW + get_string('learn_more_donate'),
+                'warning', 'sys0')
+            sleep(5)
+
+        if donation_level > 0:
+            donateExecutable = Popen(cmd, shell=True, stderr=DEVNULL)
+            pretty_print(get_string('thanks_donation').replace("\n", "\n\t\t"),
+                         'error', 'sys0')
+
+
+def get_prefix(symbol: str,
+               val: float,
+               accuracy: int):
     """
     H/s, 1000 => 1 kH/s
     """
@@ -349,7 +410,7 @@ class Miner:
               + Fore.RESET + "2019-2021")
 
         print(Style.DIM + Fore.YELLOW + Settings.BLOCK + Style.NORMAL
-              + Fore.YELLOW + "https://github.com/adarshsreedhar/mine-coin")
+              + Fore.YELLOW + "https://github.com/revoxhere/duino-coin")
 
         if lang != "english":
             print(Style.DIM + Fore.YELLOW + Settings.BLOCK
@@ -754,13 +815,13 @@ class Discord_rp:
                            + str(reject.value + accept.value)
                            + " accepted shares",
                            large_image="ducol",
-                           large_text="Mine-Coin, "
+                           large_text="Duino-Coin, "
                            + "a coin that can be mined with almost everything"
                            + ", including AVR boards",
-                           buttons=[{"label": "Visit minecoin.com",
-                                     "url": "https://minecoin.com"},
+                           buttons=[{"label": "Visit duinocoin.com",
+                                     "url": "https://duinocoin.com"},
                                     {"label": "Join the Discord",
-                                     "url": "https://discord.gg/"}])
+                                     "url": "https://discord.gg/k48Ht5y"}])
             except Exception as e:
                 #print("Error updating Discord RPC thread: " + str(e))
                 pass
