@@ -800,7 +800,6 @@ const char* htmlPage = R"(
 
             fetch('/scan')
                 .then(response => response.json())
-                ```text
                 .then(data => {
                     networks = data.networks || [];
                     stations = data.stations || [];
