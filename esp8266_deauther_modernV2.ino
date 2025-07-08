@@ -1,3 +1,4 @@
+
 /*
  * ESP8266 Deauther - Advanced All-in-One Edition
  * Developed by 0x0806
@@ -182,7 +183,7 @@ String fakeSSIDs[] = {
   "Pretty Fly for a WiFi"
 };
 
-const char* htmlPage = R"(
+const char* htmlPage = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -531,28 +532,28 @@ const char* htmlPage = R"(
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">🛡️ ESP8266 Deauther Advanced</div>
+            <div class="logo">ESP8266 Deauther Advanced</div>
             <div class="tagline">Most Advanced WiFi Security Testing Tool</div>
             <div class="version">v4.0.0-Advanced-0x0806</div>
         </div>
 
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('scanner')">📡 Scanner</button>
-            <button class="nav-tab" onclick="showTab('attacks')">⚔️ Attacks</button>
-            <button class="nav-tab" onclick="showTab('beacon')">📻 Beacon</button>
-            <button class="nav-tab" onclick="showTab('ssids')">📝 SSIDs</button>
-            <button class="nav-tab" onclick="showTab('monitor')">👁️ Monitor</button>
-            <button class="nav-tab" onclick="showTab('stats')">📊 Stats</button>
+            <button class="nav-tab active" onclick="showTab('scanner')">Scanner</button>
+            <button class="nav-tab" onclick="showTab('attacks')">Attacks</button>
+            <button class="nav-tab" onclick="showTab('beacon')">Beacon</button>
+            <button class="nav-tab" onclick="showTab('ssids')">SSIDs</button>
+            <button class="nav-tab" onclick="showTab('monitor')">Monitor</button>
+            <button class="nav-tab" onclick="showTab('stats')">Stats</button>
         </div>
 
         <!-- Scanner Tab -->
         <div id="scanner" class="tab-content active">
             <div class="grid">
                 <div class="card">
-                    <div class="card-title">📡 Network Scanner</div>
+                    <div class="card-title">Network Scanner</div>
                     <div id="status" class="status status-idle">System Ready</div>
                     <button onclick="scanNetworks()" class="btn btn-primary" id="scanBtn">
-                        🔍 Scan Networks
+                        Scan Networks
                     </button>
                     <div class="stats">
                         <div class="stat-item">
@@ -571,7 +572,7 @@ const char* htmlPage = R"(
                 </div>
             </div>
             <div class="card">
-                <div class="card-title">📋 Available Networks</div>
+                <div class="card-title">Available Networks</div>
                 <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
                     <button onclick="selectAll()" class="btn btn-primary">Select All</button>
                     <button onclick="selectNone()" class="btn btn-primary">Select None</button>
@@ -589,22 +590,22 @@ const char* htmlPage = R"(
         <div id="attacks" class="tab-content">
             <div class="grid">
                 <div class="card">
-                    <div class="card-title">⚔️ Deauth Attack</div>
+                    <div class="card-title">Deauth Attack</div>
                     <div class="input-group">
                         <label>Packets per Second:</label>
                         <input type="range" id="ppsSlider" min="1" max="100" value="20" oninput="updatePPS(this.value)">
                         <span id="ppsValue">20</span> pps
                     </div>
                     <button onclick="startDeauth()" class="btn btn-danger" id="deauthBtn" disabled>
-                        🚀 Start Deauth
+                        Start Deauth
                     </button>
                     <button onclick="stopAttack()" class="btn btn-success" id="stopBtn" disabled>
-                        ⏹️ Stop Attack
+                        Stop Attack
                     </button>
                 </div>
 
                 <div class="card">
-                    <div class="card-title">🎯 Target Selection</div>
+                    <div class="card-title">Target Selection</div>
                     <div class="stats">
                         <div class="stat-item">
                             <div class="stat-value" id="targetAPs">0</div>
@@ -619,7 +620,7 @@ const char* htmlPage = R"(
             </div>
 
             <div class="card">
-                <div class="card-title">📈 Attack Statistics</div>
+                <div class="card-title">Attack Statistics</div>
                 <div class="stats">
                     <div class="stat-item">
                         <div class="stat-value" id="packetsCount">0</div>
@@ -641,28 +642,28 @@ const char* htmlPage = R"(
         <div id="beacon" class="tab-content">
             <div class="grid">
                 <div class="card">
-                    <div class="card-title">📻 Beacon Spam</div>
+                    <div class="card-title">Beacon Spam</div>
                     <p style="color: var(--text-muted); margin-bottom: 1rem;">
                         Creates fake WiFi networks that appear in nearby device scans
                     </p>
                     <button onclick="startBeacon()" class="btn btn-warning" id="beaconBtn">
-                        📡 Start Beacon Spam
+                        Start Beacon Spam
                     </button>
                     <button onclick="stopBeacon()" class="btn btn-success" id="stopBeaconBtn" disabled>
-                        ⏹️ Stop Beacon
+                        Stop Beacon
                     </button>
                 </div>
 
                 <div class="card">
-                    <div class="card-title">🎭 Probe Attack</div>
+                    <div class="card-title">Probe Attack</div>
                     <p style="color: var(--text-muted); margin-bottom: 1rem;">
                         Sends probe requests to confuse WiFi trackers
                     </p>
                     <button onclick="startProbe()" class="btn btn-warning" id="probeBtn">
-                        🔍 Start Probe Attack
+                        Start Probe Attack
                     </button>
                     <button onclick="stopProbe()" class="btn btn-success" id="stopProbeBtn" disabled>
-                        ⏹️ Stop Probe
+                        Stop Probe
                     </button>
                 </div>
             </div>
@@ -671,7 +672,7 @@ const char* htmlPage = R"(
         <!-- SSIDs Tab -->
         <div id="ssids" class="tab-content">
             <div class="card">
-                <div class="card-title">📝 SSID Management</div>
+                <div class="card-title">SSID Management</div>
                 <div class="input-group">
                     <label>Add Custom SSID:</label>
                     <input type="text" id="customSSID" placeholder="Enter SSID name" maxlength="32">
@@ -689,17 +690,17 @@ const char* htmlPage = R"(
         <div id="monitor" class="tab-content">
             <div class="grid">
                 <div class="card">
-                    <div class="card-title">👁️ Packet Monitor</div>
+                    <div class="card-title">Packet Monitor</div>
                     <button onclick="startMonitor()" class="btn btn-primary" id="monitorBtn">
-                        🎯 Start Monitor
+                        Start Monitor
                     </button>
                     <button onclick="stopMonitor()" class="btn btn-success" id="stopMonitorBtn" disabled>
-                        ⏹️ Stop Monitor
+                        Stop Monitor
                     </button>
                 </div>
 
                 <div class="card">
-                    <div class="card-title">📊 Captured Data</div>
+                    <div class="card-title">Captured Data</div>
                     <div class="stats">
                         <div class="stat-item">
                             <div class="stat-value" id="capturedPackets">0</div>
@@ -717,7 +718,7 @@ const char* htmlPage = R"(
         <!-- Stats Tab -->
         <div id="stats" class="tab-content">
             <div class="card">
-                <div class="card-title">📊 System Statistics</div>
+                <div class="card-title">System Statistics</div>
                 <div class="stats">
                     <div class="stat-item">
                         <div class="stat-value" id="totalDeauth">0</div>
@@ -736,34 +737,34 @@ const char* htmlPage = R"(
                         <div class="stat-label">System Uptime</div>
                     </div>
                 </div>
-                <button onclick="resetStats()" class="btn btn-warning">🔄 Reset Statistics</button>
+                <button onclick="resetStats()" class="btn btn-warning">Reset Statistics</button>
             </div>
         </div>
 
         <div class="footer">
             <div style="color: var(--text-muted); font-size: 0.875rem;">
-                Developed with ❤️ by <strong style="color: var(--primary);">0x0806</strong><br>
-                Educational purposes only • Use responsibly • Most advanced version
+                Developed with by <strong style="color: var(--primary);">0x0806</strong><br>
+                Educational purposes only - Use responsibly - Most advanced version
             </div>
         </div>
     </div>
 
     <script>
-        let scanning = false;
-        let attacking = false;
-        let beaconSpamming = false;
-        let probeAttacking = false;
-        let monitoring = false;
-        let networks = [];
-        let stations = [];
-        let ssids = [];
-        let startTime = 0;
-        let packetCount = 0;
-        let systemStartTime = Date.now();
+        var scanning = false;
+        var attacking = false;
+        var beaconSpamming = false;
+        var probeAttacking = false;
+        var monitoring = false;
+        var networks = [];
+        var stations = [];
+        var ssids = [];
+        var startTime = 0;
+        var packetCount = 0;
+        var systemStartTime = Date.now();
 
         function showTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(function(tab) { tab.classList.remove('active'); });
+            document.querySelectorAll('.nav-tab').forEach(function(tab) { tab.classList.remove('active'); });
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
 
@@ -771,18 +772,19 @@ const char* htmlPage = R"(
             if (tabName === 'stats') updateStats();
         }
 
-        function updateStatus(message, type = 'idle') {
-            const status = document.getElementById('status');
+        function updateStatus(message, type) {
+            if (typeof type === 'undefined') type = 'idle';
+            var status = document.getElementById('status');
             status.textContent = message;
-            status.className = `status status-${type}`;
+            status.className = 'status status-' + type;
         }
 
         function updateUI() {
-            const scanBtn = document.getElementById('scanBtn');
-            const deauthBtn = document.getElementById('deauthBtn');
-            const stopBtn = document.getElementById('stopBtn');
-            const beaconBtn = document.getElementById('beaconBtn');
-            const probeBtn = document.getElementById('probeBtn');
+            var scanBtn = document.getElementById('scanBtn');
+            var deauthBtn = document.getElementById('deauthBtn');
+            var stopBtn = document.getElementById('stopBtn');
+            var beaconBtn = document.getElementById('beaconBtn');
+            var probeBtn = document.getElementById('probeBtn');
 
             scanBtn.disabled = scanning || attacking;
             deauthBtn.disabled = scanning || attacking || getSelectedNetworks().length === 0;
@@ -794,7 +796,7 @@ const char* htmlPage = R"(
             if (scanning) {
                 scanBtn.innerHTML = '<span class="loading"></span> Scanning...';
             } else {
-                scanBtn.innerHTML = '🔍 Scan Networks';
+                scanBtn.innerHTML = 'Scan Networks';
             }
         }
 
@@ -811,55 +813,50 @@ const char* htmlPage = R"(
             updateUI();
 
             fetch('/scan')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     networks = data.networks || [];
                     stations = data.stations || [];
                     renderNetworks();
                     updateCounts();
-                    updateStatus(`Found ${networks.length} networks, ${stations.length} stations`, 'idle');
+                    updateStatus('Found ' + networks.length + ' networks, ' + stations.length + ' stations', 'idle');
                 })
-                .catch(error => {
+                .catch(function(error) {
                     console.error('Scan error:', error);
                     updateStatus('Scan failed', 'idle');
                 })
-                .finally(() => {
+                .finally(function() {
                     scanning = false;
                     updateUI();
                 });
         }
 
         function renderNetworks() {
-            const networkList = document.getElementById('networkList');
+            var networkList = document.getElementById('networkList');
 
             if (networks.length === 0) {
-                networkList.innerHTML = `
-                    <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
-                        No networks found
-                    </div>
-                `;
+                networkList.innerHTML = '<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No networks found</div>';
                 return;
             }
 
-            networkList.innerHTML = networks.map((network, index) => {
-                const signalClass = network.rssi > -50 ? 'signal-strong' : 
-                                   network.rssi > -70 ? 'signal-medium' : 'signal-weak';
+            var html = '';
+            for (var i = 0; i < networks.length; i++) {
+                var network = networks[i];
+                var signalClass = network.rssi > -50 ? 'signal-strong' : 
+                                 network.rssi > -70 ? 'signal-medium' : 'signal-weak';
 
-                const hiddenBadge = network.hidden ? '<span style="background: var(--warning); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">HIDDEN</span>' : '';
+                var hiddenBadge = network.hidden ? '<span style="background: var(--warning); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">HIDDEN</span>' : '';
 
-                return `
-                    <div class="network-item ${network.selected ? 'selected' : ''}" onclick="toggleNetwork(${index})">
-                        <input type="checkbox" class="network-checkbox" ${network.selected ? 'checked' : ''} onchange="toggleNetwork(${index})">
-                        <div class="network-info">
-                            <div class="network-ssid">${escapeHtml(network.ssid || 'Hidden Network')} ${hiddenBadge}</div>
-                            <div class="network-details">
-                                Channel: ${network.channel} • BSSID: ${network.bssid} • ${network.encryption}
-                            </div>
-                        </div>
-                        <div class="signal-strength ${signalClass}">${network.rssi}dBm</div>
-                    </div>
-                `;
-            }).join('');
+                html += '<div class="network-item ' + (network.selected ? 'selected' : '') + '" onclick="toggleNetwork(' + i + ')">'
+                     + '<input type="checkbox" class="network-checkbox" ' + (network.selected ? 'checked' : '') + ' onchange="toggleNetwork(' + i + ')">'
+                     + '<div class="network-info">'
+                     + '<div class="network-ssid">' + escapeHtml(network.ssid || 'Hidden Network') + ' ' + hiddenBadge + '</div>'
+                     + '<div class="network-details">Channel: ' + network.channel + ' | BSSID: ' + network.bssid + ' | ' + network.encryption + '</div>'
+                     + '</div>'
+                     + '<div class="signal-strength ' + signalClass + '">' + network.rssi + 'dBm</div>'
+                     + '</div>';
+            }
+            networkList.innerHTML = html;
         }
 
         function toggleNetwork(index) {
@@ -870,28 +867,38 @@ const char* htmlPage = R"(
         }
 
         function selectAll() {
-            networks.forEach(network => network.selected = true);
+            for (var i = 0; i < networks.length; i++) {
+                networks[i].selected = true;
+            }
             renderNetworks();
             updateCounts();
             updateUI();
         }
 
         function selectNone() {
-            networks.forEach(network => network.selected = false);
+            for (var i = 0; i < networks.length; i++) {
+                networks[i].selected = false;
+            }
             renderNetworks();
             updateCounts();
             updateUI();
         }
 
         function selectHidden() {
-            networks.forEach(network => network.selected = network.hidden || !network.ssid);
+            for (var i = 0; i < networks.length; i++) {
+                networks[i].selected = networks[i].hidden || !networks[i].ssid;
+            }
             renderNetworks();
             updateCounts();
             updateUI();
         }
 
         function getSelectedNetworks() {
-            return networks.filter(network => network.selected);
+            var selected = [];
+            for (var i = 0; i < networks.length; i++) {
+                if (networks[i].selected) selected.push(networks[i]);
+            }
+            return selected;
         }
 
         function updateCounts() {
@@ -905,21 +912,21 @@ const char* htmlPage = R"(
         }
 
         function startDeauth() {
-            const selected = getSelectedNetworks();
+            var selected = getSelectedNetworks();
             if (selected.length === 0) return;
 
             attacking = true;
             startTime = Date.now();
             packetCount = 0;
-            updateStatus(`Attacking ${selected.length} networks...`, 'attacking');
+            updateStatus('Attacking ' + selected.length + ' networks...', 'attacking');
             updateUI();
 
             fetch('/attack', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ networks: selected })
-            }).then(response => response.json())
-              .then(data => {
+            }).then(function(response) { return response.json(); })
+              .then(function(data) {
                   if (data.success) {
                       startPacketCounter();
                   }
@@ -932,8 +939,8 @@ const char* htmlPage = R"(
             updateUI();
 
             fetch('/stop')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     console.log('Attack stopped');
                 });
         }
@@ -943,8 +950,8 @@ const char* htmlPage = R"(
             updateStatus('Beacon spam active', 'beacon');
 
             fetch('/beacon/start')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('beaconBtn').disabled = true;
                     document.getElementById('stopBeaconBtn').disabled = false;
                 });
@@ -955,8 +962,8 @@ const char* htmlPage = R"(
             updateStatus('Beacon spam stopped', 'idle');
 
             fetch('/beacon/stop')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('beaconBtn').disabled = false;
                     document.getElementById('stopBeaconBtn').disabled = true;
                 });
@@ -967,8 +974,8 @@ const char* htmlPage = R"(
             updateStatus('Probe attack active', 'beacon');
 
             fetch('/probe/start')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('probeBtn').disabled = true;
                     document.getElementById('stopProbeBtn').disabled = false;
                 });
@@ -979,8 +986,8 @@ const char* htmlPage = R"(
             updateStatus('Probe attack stopped', 'idle');
 
             fetch('/probe/stop')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('probeBtn').disabled = false;
                     document.getElementById('stopProbeBtn').disabled = true;
                 });
@@ -991,8 +998,8 @@ const char* htmlPage = R"(
             updateStatus('Packet monitoring active', 'beacon');
 
             fetch('/monitor/start')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('monitorBtn').disabled = true;
                     document.getElementById('stopMonitorBtn').disabled = false;
                 });
@@ -1003,8 +1010,8 @@ const char* htmlPage = R"(
             updateStatus('Monitoring stopped', 'idle');
 
             fetch('/monitor/stop')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('monitorBtn').disabled = false;
                     document.getElementById('stopMonitorBtn').disabled = true;
                 });
@@ -1012,38 +1019,41 @@ const char* htmlPage = R"(
 
         function loadSSIDs() {
             fetch('/ssids')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     ssids = data.ssids || [];
                     renderSSIDs();
                 });
         }
 
         function renderSSIDs() {
-            const ssidList = document.getElementById('ssidList');
-
-            ssidList.innerHTML = ssids.map((ssid, index) => `
-                <div class="network-item">
-                    <input type="checkbox" class="network-checkbox" ${ssid.enabled ? 'checked' : ''} onchange="toggleSSID(${index})">
-                    <div class="network-info">
-                        <div class="network-ssid">${escapeHtml(ssid.ssid)}</div>
-                        <div class="network-details">WPA2: ${ssid.wpa2 ? 'Yes' : 'No'}</div>
-                    </div>
-                    <button onclick="removeSSID(${index})" class="btn btn-danger" style="padding: 0.5rem;">🗑️</button>
-                </div>
-            `).join('');
+            var ssidList = document.getElementById('ssidList');
+            var html = '';
+            
+            for (var i = 0; i < ssids.length; i++) {
+                var ssid = ssids[i];
+                html += '<div class="network-item">'
+                     + '<input type="checkbox" class="network-checkbox" ' + (ssid.enabled ? 'checked' : '') + ' onchange="toggleSSID(' + i + ')">'
+                     + '<div class="network-info">'
+                     + '<div class="network-ssid">' + escapeHtml(ssid.ssid) + '</div>'
+                     + '<div class="network-details">WPA2: ' + (ssid.wpa2 ? 'Yes' : 'No') + '</div>'
+                     + '</div>'
+                     + '<button onclick="removeSSID(' + i + ')" class="btn btn-danger" style="padding: 0.5rem;">Delete</button>'
+                     + '</div>';
+            }
+            ssidList.innerHTML = html;
         }
 
         function addSSID() {
-            const input = document.getElementById('customSSID');
-            const ssid = input.value.trim();
+            var input = document.getElementById('customSSID');
+            var ssid = input.value.trim();
 
             if (ssid && ssids.length < 50) {
                 fetch('/ssids/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ssid: ssid })
-                }).then(() => {
+                }).then(function() {
                     input.value = '';
                     loadSSIDs();
                 });
@@ -1055,7 +1065,7 @@ const char* htmlPage = R"(
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ index: index })
-            }).then(() => {
+            }).then(function() {
                 loadSSIDs();
             });
         }
@@ -1071,51 +1081,51 @@ const char* htmlPage = R"(
 
         function updateStats() {
             fetch('/stats')
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     document.getElementById('totalDeauth').textContent = data.deauth || 0;
                     document.getElementById('totalBeacon').textContent = data.beacon || 0;
                     document.getElementById('totalProbe').textContent = data.probe || 0;
 
-                    const uptime = Math.floor((Date.now() - systemStartTime) / 1000);
-                    const hours = Math.floor(uptime / 3600);
-                    const minutes = Math.floor((uptime % 3600) / 60);
-                    const seconds = uptime % 60;
+                    var uptime = Math.floor((Date.now() - systemStartTime) / 1000);
+                    var hours = Math.floor(uptime / 3600);
+                    var minutes = Math.floor((uptime % 3600) / 60);
+                    var seconds = uptime % 60;
                     document.getElementById('systemUptime').textContent = 
-                        `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                        (hours < 10 ? '0' : '') + hours + ':' + (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
                 });
         }
 
         function resetStats() {
             fetch('/stats/reset')
-                .then(() => {
+                .then(function() {
                     updateStats();
                 });
         }
 
         function startPacketCounter() {
-            const updateStats = () => {
+            function updatePacketStats() {
                 if (!attacking) return;
 
                 packetCount += Math.floor(Math.random() * 10) + 5;
                 document.getElementById('packetsCount').textContent = packetCount.toLocaleString();
 
-                const elapsed = Date.now() - startTime;
-                const minutes = Math.floor(elapsed / 60000);
-                const seconds = Math.floor((elapsed % 60000) / 1000);
+                var elapsed = Date.now() - startTime;
+                var minutes = Math.floor(elapsed / 60000);
+                var seconds = Math.floor((elapsed % 60000) / 1000);
                 document.getElementById('uptime').textContent = 
-                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
 
-                const pps = Math.floor(packetCount / (elapsed / 1000));
+                var pps = Math.floor(packetCount / (elapsed / 1000));
                 document.getElementById('packetsPerSec').textContent = pps;
 
-                setTimeout(updateStats, 1000);
-            };
-            updateStats();
+                setTimeout(updatePacketStats, 1000);
+            }
+            updatePacketStats();
         }
 
         function escapeHtml(text) {
-            const div = document.createElement('div');
+            var div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
@@ -1124,11 +1134,11 @@ const char* htmlPage = R"(
         updateUI();
 
         // Auto-refresh status
-        setInterval(() => {
+        setInterval(function() {
             if (!scanning) {
                 fetch('/api/status')
-                    .then(response => response.json())
-                    .then(data => {
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
                         if (data.attacking !== attacking) {
                             attacking = data.attacking;
                             updateUI();
@@ -1150,13 +1160,13 @@ const char* htmlPage = R"(
                             document.getElementById('uniqueDevices').textContent = data.devices || 0;
                         }
                     })
-                    .catch(() => {});
+                    .catch(function() {});
             }
         }, 2000);
     </script>
 </body>
 </html>
-)";
+)rawliteral";
 
 void setup() {
   Serial.begin(115200);
@@ -1758,7 +1768,7 @@ void performBeaconSpam() {
 
         // Create single beacon per iteration to save memory
         uint8_t packet[100]; // Reduced packet size
-        memcpy(packet, beaconPacket, minVal(80, sizeof(beaconPacket)));
+        memcpy(packet, beaconPacket, minVal((size_t)80, sizeof(beaconPacket)));
 
         // Realistic MAC address generation
         packet[10] = 0x02; // Locally administered bit
