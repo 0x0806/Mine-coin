@@ -1,4 +1,4 @@
-[⚠️ Suspicious Content] 
+
 # 0x0806 WiFi Deauther - Advanced Security Testing Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
