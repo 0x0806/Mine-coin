@@ -488,18 +488,6 @@ v2.0.0-Enhanced - Multi-channel support
 v1.0.0-Initial - Basic deauth functionality
 ```
 
-### Planned Features (v7.0.0)
-```
-🚀 Roadmap:
-├─ Machine Learning integration
-├─ Advanced protocol analysis
-├─ Automated report generation
-├─ Cloud synchronization
-├─ Mobile app companion
-├─ Enterprise management
-└─ AI-powered optimization
-```
-
 ---
 
 ## 🔧 Troubleshooting
