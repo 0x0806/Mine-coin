@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 [![ESP8266](https://img.shields.io/badge/ESP8266-Compatible-blue.svg)](https://www.espressif.com/en/products/socs/esp8266)
 [![ESP32](https://img.shields.io/badge/ESP32-Compatible-green.svg)](https://www.espressif.com/en/products/socs/esp32)
-[![Version](https://img.shields.io/badge/Version-v6.0.0--Ultimate-darkgreen.svg)](https://github.com/0x0806/esp-arsenal)
+[![Version](https://img.shields.io/badge/Version-v2.0.0-darkgreen.svg)](https://github.com/0x0806/esp-arsenal)
 [![Security](https://img.shields.io/badge/Security-Testing-orange.svg)](https://owasp.org/www-project-top-ten/)
 [![Platform](https://img.shields.io/badge/Platform-Arduino-teal.svg)](https://www.arduino.cc/)
 
