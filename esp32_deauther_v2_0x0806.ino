@@ -2,8 +2,8 @@
 /*
  * Advanced WiFi & BLE Security Testing Platform
  * Developed by 0x0806
- * ESP32/ESP8266 Compatible - Full Featured
- * Version: 3.0 - Production Ready
+ * ESP32/ESP8266 Compatible 
+ * Version: 3.0 
  */
 
 // Platform Detection and Includes
