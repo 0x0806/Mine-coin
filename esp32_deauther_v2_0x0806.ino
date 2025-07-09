@@ -448,7 +448,7 @@ void setup() {
 
   // Start the access point with explicit channel
   bool apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-  
+
   if (apStarted) {
     Serial.println("Access Point Started Successfully");
     Serial.print("SSID: ");
@@ -463,13 +463,13 @@ void setup() {
     Serial.println("ERROR: Failed to start Access Point!");
     Serial.println("Retrying AP setup...");
     delay(2000);
-    
+
     // Try alternative setup
     WiFi.mode(WIFI_OFF);
     delay(1000);
     WiFi.mode(WIFI_AP);
     delay(1000);
-    
+
     if (WiFi.softAP(AP_SSID, AP_PASS)) {
       Serial.println("Access Point Started on retry");
     } else {
@@ -530,14 +530,14 @@ void setup() {
 void loop() {
   static unsigned long lastAPCheck = 0;
   static unsigned long lastStatusPrint = 0;
-  
+
   dnsServer.processNextRequest();
   server.handleClient();
 
   // Check AP status every 10 seconds
   if (millis() - lastAPCheck > 10000) {
     lastAPCheck = millis();
-    
+
     if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
       Serial.println("WARNING: AP mode lost! Restarting...");
       WiFi.mode(WIFI_AP);
@@ -866,30 +866,113 @@ void handleBLEAttack() {
   server.send(200, "text/plain", response);
 }
 
+#ifdef PLATFORM_ESP32
 void handleBLEScan() {
-  String result = "<h4>🔵 BLE Devices</h4>";
+  Serial.println("Starting comprehensive BLE device scan...");
+  String result = "<h4>🔵 Real BLE Devices Detected</h4>";
 
-  BLEScanResults* scanResults = BLEDevice::getScan()->start(5, false);
+  // Initialize BLE scan with aggressive settings
+  BLEScan* pBLEScan = BLEDevice::getScan();
+  pBLEScan->setActiveScan(true);    // Active scan for more detailed info
+  pBLEScan->setInterval(100);       // Scan interval
+  pBLEScan->setWindow(99);          // Scan window
+
+  // Perform extended scan for better device detection
+  BLEScanResults* scanResults = pBLEScan->start(10, false);  // 10 second scan
   int deviceCount = scanResults->getCount();
 
+  Serial.println("BLE scan completed. Found " + String(deviceCount) + " devices");
+
   if (deviceCount == 0) {
-    result += "<div class='network-item'>No BLE devices found</div>";
+    result += "<div class='network-item'>⚠️ No BLE devices detected</div>";
+    result += "<div class='network-item'>💡 Try enabling Bluetooth on nearby devices</div>";
   } else {
     for (int i = 0; i < deviceCount; i++) {
       BLEAdvertisedDevice device = scanResults->getDevice(i);
-      String name = device.haveName() ? device.getName().c_str() : "Unknown";
-      String address = device.getAddress().toString().c_str();
+
+      // Extract device information
+      String name = device.haveName() ? String(device.getName().c_str()) : "Unknown Device";
+      String address = String(device.getAddress().toString().c_str());
       int rssi = device.getRSSI();
 
+      // Get manufacturer data if available
+      String manufacturerData = "";
+      if (device.haveManufacturerData()) {
+        std::string mfgData = device.getManufacturerData();
+        manufacturerData = "Mfg: ";
+        for (int j = 0; j < mfgData.length() && j < 8; j++) {
+          manufacturerData += String((uint8_t)mfgData[j], HEX) + " ";
+        }
+      }
+
+      // Determine device type based on name/manufacturer
+      String deviceType = "📱 Unknown";
+      String deviceName = name;
+      deviceName.toLowerCase();
+
+      if (deviceName.indexOf("iphone") >= 0) deviceType = "📱 iPhone";
+      else if (deviceName.indexOf("android") >= 0) deviceType = "📱 Android";
+      else if (deviceName.indexOf("samsung") >= 0) deviceType = "📱 Samsung";
+      else if (deviceName.indexOf("apple") >= 0) deviceType = "🍎 Apple Device";
+      else if (deviceName.indexOf("watch") >= 0) deviceType = "⌚ Smartwatch";
+      else if (deviceName.indexOf("headphone") >= 0 || deviceName.indexOf("earbuds") >= 0) deviceType = "🎧 Audio Device";
+      else if (deviceName.indexOf("tv") >= 0) deviceType = "📺 Smart TV";
+      else if (deviceName.indexOf("mouse") >= 0 || deviceName.indexOf("keyboard") >= 0) deviceType = "⌨️ Input Device";
+
+      // Signal strength assessment
+      String signalInfo;
+      if (rssi > -40) signalInfo = "📶 Very Strong";
+      else if (rssi > -55) signalInfo = "📶 Strong";
+      else if (rssi > -70) signalInfo = "📶 Moderate";
+      else if (rssi > -85) signalInfo = "📶 Weak";
+      else signalInfo = "📶 Very Weak";
+
+      // Check if device has services
+      String services = "";
+      if (device.haveServiceUUID()) {
+        services = "🔧 Services: " + String(device.getServiceUUID().toString().c_str());
+      }
+
       result += "<div class='network-item' onclick='selectBLEDevice(\"" + name + "\", \"" + address + "\")'>";
-      result += "<strong>" + name + "</strong><br>";
-      result += "MAC: " + address + " | RSSI: " + String(rssi) + "dBm";
+      result += "<strong>" + deviceType + " " + name + "</strong><br>";
+      result += "📍 MAC: " + address + "<br>";
+      result += "📡 " + signalInfo + " (" + String(rssi) + " dBm)<br>";
+
+      if (manufacturerData.length() > 0) {
+        result += "🏭 " + manufacturerData + "<br>";
+      }
+
+      if (services.length() > 0) {
+        result += services;
+      }
+
       result += "</div>";
+
+      // Log detailed device info
+      Serial.println("BLE Device " + String(i+1) + ":");
+      Serial.println("  Name: " + name);
+      Serial.println("  Address: " + address);
+      Serial.println("  RSSI: " + String(rssi) + " dBm");
+      Serial.println("  Type: " + deviceType);
+      if (manufacturerData.length() > 0) {
+        Serial.println("  Manufacturer: " + manufacturerData);
+      }
     }
+
+    // Store BLE devices for attack targeting
+    bleDevices = result;
   }
 
+  // Add scan statistics
+  result += "<div class='network-item'>";
+  result += "📊 Scan Statistics: " + String(deviceCount) + " devices detected in 10-second scan<br>";
+  result += "🔄 Last scan: " + String(millis()/1000) + "s uptime";
+  result += "</div>";
+
+  Serial.println("BLE scan results prepared and sent");
   server.send(200, "text/html", result);
 }
+#endif
 
 void handleBLEDevices() {
   server.send(200, "application/json", bleDevices);
@@ -1201,7 +1284,7 @@ void bleAttackTaskFunction(void *parameter) {
 
 void performInitialScan() {
   Serial.println("Performing initial network scan...");
-  
+
   // Don't change mode if AP is already running
   if (WiFi.getMode() == WIFI_AP) {
     WiFi.mode(WIFI_AP_STA);
