@@ -412,7 +412,7 @@ updateStats();
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(2000);
 
   Serial.println("\n=================================");
   Serial.println("WiFi & BLE Security Tester v2.0");
@@ -434,19 +434,54 @@ void setup() {
     Serial.println("SPIFFS initialization failed!");
   }
 
-  // Setup WiFi AP
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  // Disconnect from any existing WiFi first
+  WiFi.disconnect(true);
+  delay(1000);
+
+  // Setup WiFi AP with proper configuration
+  WiFi.mode(WIFI_AP);
+  delay(500);
 
   IPAddress apIP(192, 168, 4, 1);
   IPAddress subnet(255, 255, 255, 0);
   WiFi.softAPConfig(apIP, apIP, subnet);
 
-  Serial.println("Access Point Started");
-  Serial.print("SSID: ");
-  Serial.println(AP_SSID);
-  Serial.print("IP: ");
-  Serial.println(WiFi.softAPIP());
+  // Start the access point with explicit channel
+  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+  
+  if (apStarted) {
+    Serial.println("Access Point Started Successfully");
+    Serial.print("SSID: ");
+    Serial.println(AP_SSID);
+    Serial.print("Password: ");
+    Serial.println(AP_PASS);
+    Serial.print("IP: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.print("MAC: ");
+    Serial.println(WiFi.softAPmacAddress());
+  } else {
+    Serial.println("ERROR: Failed to start Access Point!");
+    Serial.println("Retrying AP setup...");
+    delay(2000);
+    
+    // Try alternative setup
+    WiFi.mode(WIFI_OFF);
+    delay(1000);
+    WiFi.mode(WIFI_AP);
+    delay(1000);
+    
+    if (WiFi.softAP(AP_SSID, AP_PASS)) {
+      Serial.println("Access Point Started on retry");
+    } else {
+      Serial.println("CRITICAL: AP setup failed completely!");
+    }
+  }
+
+  // Verify AP is running
+  Serial.print("AP Status: ");
+  Serial.println(WiFi.getMode() == WIFI_AP ? "Active" : "Failed");
+  Serial.print("Connected stations: ");
+  Serial.println(WiFi.softAPgetStationNum());
 
   // Setup DNS server for captive portal
   dnsServer.start(DNS_PORT, "*", apIP);
@@ -493,8 +528,36 @@ void setup() {
 }
 
 void loop() {
+  static unsigned long lastAPCheck = 0;
+  static unsigned long lastStatusPrint = 0;
+  
   dnsServer.processNextRequest();
   server.handleClient();
+
+  // Check AP status every 10 seconds
+  if (millis() - lastAPCheck > 10000) {
+    lastAPCheck = millis();
+    
+    if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
+      Serial.println("WARNING: AP mode lost! Restarting...");
+      WiFi.mode(WIFI_AP);
+      delay(500);
+      WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+    }
+  }
+
+  // Print status every 30 seconds
+  if (millis() - lastStatusPrint > 30000) {
+    lastStatusPrint = millis();
+    Serial.println("=== Status Report ===");
+    Serial.print("WiFi Mode: ");
+    Serial.println(WiFi.getMode());
+    Serial.print("AP IP: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.print("Connected clients: ");
+    Serial.println(WiFi.softAPgetStationNum());
+    Serial.println("====================");
+  }
 
   // Handle attacks
   if (attackRunning) {
@@ -691,11 +754,11 @@ void handleScan() {
 
   String result = "<h4>📡 WiFi Networks</h4>";
 
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  delay(100);
+  // Temporarily switch to STA mode for scanning
+  WiFi.mode(WIFI_AP_STA);
+  delay(500);
 
-  int networksFound = WiFi.scanNetworks();
+  int networksFound = WiFi.scanNetworks(false, false);
 
   if (networksFound == 0) {
     result += "<div class='network-item'>No networks found</div>";
@@ -724,6 +787,11 @@ void handleScan() {
     result += "<div class='network-item'>5GHz scanning requires additional hardware configuration</div>";
   }
 #endif
+
+  // Restore AP mode after scanning
+  WiFi.mode(WIFI_AP);
+  delay(500);
+  WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
 
   server.send(200, "text/html", result);
 }
@@ -755,7 +823,9 @@ void handleAttack() {
   attackStartTime = millis();
   packetsCount = 0;
 
-  WiFi.mode(WIFI_STA);
+  // Keep AP mode active during attacks
+  WiFi.mode(WIFI_AP_STA);
+  delay(100);
 
 #ifdef PLATFORM_ESP32
   esp_wifi_set_channel(targetChannel, WIFI_SECOND_CHAN_NONE);
@@ -1131,16 +1201,24 @@ void bleAttackTaskFunction(void *parameter) {
 
 void performInitialScan() {
   Serial.println("Performing initial network scan...");
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  delay(100);
+  
+  // Don't change mode if AP is already running
+  if (WiFi.getMode() == WIFI_AP) {
+    WiFi.mode(WIFI_AP_STA);
+    delay(500);
+  }
 
-  int networks = WiFi.scanNetworks();
+  int networks = WiFi.scanNetworks(false, false);
   Serial.println("Found " + String(networks) + " networks");
 
   for (int i = 0; i < networks; i++) {
     Serial.println("  " + WiFi.SSID(i) + " (" + WiFi.BSSIDstr(i) + ") Ch:" + String(WiFi.channel(i)));
   }
 
-  WiFi.mode(WIFI_AP_STA);
+  // Ensure AP stays active
+  if (WiFi.getMode() != WIFI_AP) {
+    WiFi.mode(WIFI_AP);
+    delay(500);
+    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+  }
 }
