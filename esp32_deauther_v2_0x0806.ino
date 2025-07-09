@@ -5,7 +5,7 @@
  * Features: WiFi attacks (2.4/5GHz), BLE attacks, captive portal
  */
 
-#ifdef ESP32
+#if defined(ESP32)
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -19,7 +19,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #define PLATFORM_ESP32
-#else
+#elif defined(ESP8266)
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
@@ -28,6 +28,8 @@ extern "C" {
 #include "user_interface.h"
 }
 #define PLATFORM_ESP8266
+#else
+#error "Unsupported platform! This code requires ESP32 or ESP8266"
 #endif
 
 // Configuration
@@ -412,7 +414,7 @@ updateStats();
 
 void setup() {
   Serial.begin(115200);
-  delay(2000);
+  delay(3000);  // Increased delay for proper initialization
 
   Serial.println("\n=================================");
   Serial.println("WiFi & BLE Security Tester v2.0");
@@ -420,8 +422,15 @@ void setup() {
 
 #ifdef PLATFORM_ESP32
   Serial.println("Platform: ESP32 (Dual-band + BLE)");
+  
+  // ESP32 specific power management
+  esp_wifi_set_ps(WIFI_PS_NONE);  // Disable power saving
 #else
   Serial.println("Platform: ESP8266 (2.4GHz only)");
+  
+  // ESP8266 specific settings
+  wifi_set_sleep_type(NONE_SLEEP_T);  // Disable sleep mode
+  system_phy_set_powerup_option(3);   // Full power on startup
 #endif
   Serial.println("=================================\n");
 
@@ -434,54 +443,97 @@ void setup() {
     Serial.println("SPIFFS initialization failed!");
   }
 
-  // Disconnect from any existing WiFi first
-  WiFi.disconnect(true);
+  // Complete WiFi reset and initialization
+  Serial.println("Initializing WiFi subsystem...");
+  
+#ifdef PLATFORM_ESP32
+  WiFi.mode(WIFI_OFF);
+  delay(1000);
+  
+  // ESP32 specific initialization
+  esp_wifi_stop();
+  esp_wifi_deinit();
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  esp_wifi_init(&cfg);
+  esp_wifi_set_mode(WIFI_MODE_AP);
+  esp_wifi_start();
+  delay(1000);
+#else
+  // ESP8266 specific initialization
+  WiFi.persistent(false);  // Don't save WiFi config to flash
+  WiFi.mode(WIFI_OFF);
+  delay(1000);
+  wifi_fpm_close();  // Close force sleep
+  delay(500);
+#endif
+
+  // Configure AP settings
+  WiFi.mode(WIFI_AP);
   delay(1000);
 
-  // Setup WiFi AP with proper configuration
-  WiFi.mode(WIFI_AP);
+  IPAddress apIP(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  
+  // Configure IP settings before starting AP
+  if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
+    Serial.println("ERROR: Failed to configure AP IP settings!");
+  }
+  
   delay(500);
 
-  IPAddress apIP(192, 168, 4, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.softAPConfig(apIP, apIP, subnet);
-
-  // Start the access point with explicit channel
-  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
-
-  if (apStarted) {
-    Serial.println("Access Point Started Successfully");
-    Serial.print("SSID: ");
-    Serial.println(AP_SSID);
-    Serial.print("Password: ");
-    Serial.println(AP_PASS);
-    Serial.print("IP: ");
-    Serial.println(WiFi.softAPIP());
-    Serial.print("MAC: ");
-    Serial.println(WiFi.softAPmacAddress());
-  } else {
-    Serial.println("ERROR: Failed to start Access Point!");
-    Serial.println("Retrying AP setup...");
-    delay(2000);
-
-    // Try alternative setup
-    WiFi.mode(WIFI_OFF);
-    delay(1000);
-    WiFi.mode(WIFI_AP);
-    delay(1000);
-
-    if (WiFi.softAP(AP_SSID, AP_PASS)) {
-      Serial.println("Access Point Started on retry");
+  // Start access point with robust settings
+  bool apStarted = false;
+  int attempts = 0;
+  
+  while (!apStarted && attempts < 5) {
+    attempts++;
+    Serial.println("AP Start Attempt " + String(attempts) + "...");
+    
+#ifdef PLATFORM_ESP32
+    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // Channel 6, max 4 clients
+#else
+    apStarted = WiFi.softAP(AP_SSID, AP_PASS, 6, false);     // Channel 6
+#endif
+    
+    if (!apStarted) {
+      Serial.println("AP start failed, retrying...");
+      WiFi.softAPdisconnect(true);
+      delay(2000);
     } else {
-      Serial.println("CRITICAL: AP setup failed completely!");
+      delay(1000);  // Allow AP to stabilize
+      
+      // Verify AP is actually working
+      if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
+        Serial.println("AP IP not assigned, retrying...");
+        apStarted = false;
+        WiFi.softAPdisconnect(true);
+        delay(2000);
+      }
     }
   }
 
-  // Verify AP is running
-  Serial.print("AP Status: ");
-  Serial.println(WiFi.getMode() == WIFI_AP ? "Active" : "Failed");
-  Serial.print("Connected stations: ");
-  Serial.println(WiFi.softAPgetStationNum());
+  if (apStarted) {
+    Serial.println("✅ Access Point Started Successfully!");
+    Serial.println("SSID: " + String(AP_SSID));
+    Serial.println("Password: " + String(AP_PASS));
+    Serial.println("IP Address: " + WiFi.softAPIP().toString());
+    Serial.println("MAC Address: " + WiFi.softAPmacAddress());
+    Serial.println("Channel: 6");
+    
+    // Additional verification
+    delay(2000);
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+      Serial.println("✅ AP Mode Confirmed Active");
+    } else {
+      Serial.println("❌ AP Mode Verification Failed");
+    }
+  } else {
+    Serial.println("❌ CRITICAL: Failed to start Access Point after 5 attempts!");
+    Serial.println("Performing emergency restart...");
+    delay(5000);
+    ESP.restart();
+  }
 
   // Setup DNS server for captive portal
   dnsServer.start(DNS_PORT, "*", apIP);
@@ -530,41 +582,99 @@ void setup() {
 void loop() {
   static unsigned long lastAPCheck = 0;
   static unsigned long lastStatusPrint = 0;
+  static unsigned long lastClientCheck = 0;
 
   dnsServer.processNextRequest();
   server.handleClient();
 
-  // Check AP status every 10 seconds
-  if (millis() - lastAPCheck > 10000) {
+  // Enhanced AP monitoring every 5 seconds
+  if (millis() - lastAPCheck > 5000) {
     lastAPCheck = millis();
 
-    if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
-      Serial.println("WARNING: AP mode lost! Restarting...");
+    // Check if AP mode is active with platform-specific handling
+#ifdef PLATFORM_ESP32
+    wifi_mode_t currentMode = WiFi.getMode();
+    bool apModeActive = (currentMode == WIFI_AP || currentMode == WIFI_AP_STA);
+#else
+    uint8_t currentMode = wifi_get_opmode();
+    bool apModeActive = (currentMode == SOFTAP_MODE || currentMode == STATIONAP_MODE);
+#endif
+
+    if (!apModeActive) {
+      Serial.println("⚠️ WARNING: AP mode lost! Attempting recovery...");
+      
+      // Attempt AP recovery
       WiFi.mode(WIFI_AP);
-      delay(500);
-      WiFi.softAP(AP_SSID, AP_PASS, 1, false, 8);
+      delay(1000);
+      
+#ifdef PLATFORM_ESP32
+      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);
+#else
+      bool recovered = WiFi.softAP(AP_SSID, AP_PASS, 6, false);
+#endif
+      
+      if (recovered) {
+        Serial.println("✅ AP mode recovered successfully");
+      } else {
+        Serial.println("❌ AP recovery failed, restarting device...");
+        delay(3000);
+        ESP.restart();
+      }
+    }
+    
+    // Verify AP IP is still valid
+    if (WiFi.softAPIP() == IPAddress(0, 0, 0, 0)) {
+      Serial.println("⚠️ WARNING: AP IP lost! Reconfiguring...");
+      IPAddress apIP(192, 168, 4, 1);
+      IPAddress gateway(192, 168, 4, 1);
+      IPAddress subnet(255, 255, 255, 0);
+      WiFi.softAPConfig(apIP, gateway, subnet);
     }
   }
 
-  // Print status every 30 seconds
-  if (millis() - lastStatusPrint > 30000) {
-    lastStatusPrint = millis();
-    Serial.println("=== Status Report ===");
-    Serial.print("WiFi Mode: ");
-    Serial.println(WiFi.getMode());
-    Serial.print("AP IP: ");
-    Serial.println(WiFi.softAPIP());
-    Serial.print("Connected clients: ");
-    Serial.println(WiFi.softAPgetStationNum());
-    Serial.println("====================");
+  // Check for client connections every 15 seconds
+  if (millis() - lastClientCheck > 15000) {
+    lastClientCheck = millis();
+    
+    uint8_t clientCount = WiFi.softAPgetStationNum();
+    if (clientCount > 0) {
+      Serial.println("📱 Active clients: " + String(clientCount));
+    }
   }
 
-  // Handle attacks
+  // Print detailed status every 60 seconds
+  if (millis() - lastStatusPrint > 60000) {
+    lastStatusPrint = millis();
+    Serial.println("\n=== Detailed Status Report ===");
+    
+#ifdef PLATFORM_ESP32
+    Serial.println("WiFi Mode: " + String(WiFi.getMode()));
+#else
+    Serial.println("WiFi Mode: " + String(wifi_get_opmode()));
+#endif
+    
+    Serial.println("AP SSID: " + String(AP_SSID));
+    Serial.println("AP IP: " + WiFi.softAPIP().toString());
+    Serial.println("AP MAC: " + WiFi.softAPmacAddress());
+    Serial.println("Connected clients: " + String(WiFi.softAPgetStationNum()));
+    Serial.println("Uptime: " + String(millis()/1000) + " seconds");
+    Serial.println("Free heap: " + String(ESP.getFreeHeap()) + " bytes");
+    
+    if (attackRunning) {
+      Serial.println("Attack active: " + getAttackTypeName());
+      Serial.println("Packets sent: " + String(packetsCount));
+    }
+    Serial.println("==============================\n");
+  }
+
+  // Handle attacks with rate limiting
   if (attackRunning) {
     handleCurrentAttack();
   }
 
-  delay(10);
+  // Prevent watchdog issues
+  yield();
+  delay(5);
 }
 
 void setupWebServer() {
