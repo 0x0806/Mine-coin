@@ -1,5 +1,5 @@
 
-# 0x0806 ESP Arsenal Ultimate - Advanced WiFi & BLE Security Testing Platform
+# 0x0806 ESP Arsenal  - Advanced WiFi & BLE Security Testing Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 [![ESP8266](https://img.shields.io/badge/ESP8266-Compatible-blue.svg)](https://www.espressif.com/en/products/socs/esp8266)
